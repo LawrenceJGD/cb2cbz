@@ -1,0 +1,51 @@
+[project]
+name = "cb2cbz"
+version = "0.1.0"
+description = "Comic Book files to CBZ converter"
+authors = [
+    {name = "Lawrence González", email = "lawrencejgd@gmail.com"},
+]
+dependencies = [
+    "pillow>=10.4.0",
+    "pillow-jxl-plugin>=1.2.5",
+]
+requires-python = ">=3.12"
+readme = "README.md"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+
+[tool.pdm]
+distribution = true
+
+[tool.pdm.dev-dependencies]
+lint = [
+    "mypy>=1.10.1",
+    "black>=24.4.2",
+    "ruff>=0.5.3",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+fixable = ["I001"]
+ignore = ["ANN101", "ANN102", "UP007", "UP006", "RUF012", "TD003"]
+select = [
+    "F", "E", "W", "C90", "I", "N", "D", "UP", "YTT", "ASYNC", "ASYNC1", "S",
+    "BLE", "FBT", "B", "A", "C4", "DTZ", "T10", "EM", "EXE", "FA", "ISC", "ICN",
+    "LOG", "G", "INP", "PIE", "Q", "RSE", "RET", "SLF", "SLOT", "SIM", "TID",
+    "TCH", "INT", "INT", "ARG", "PTH", "TD", "PLC", "FIX", "ERA", "PD", "PLC",
+    "PLE", "PLR", "PLW", "TRY", "FLY", "PERF", "RUF"
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
