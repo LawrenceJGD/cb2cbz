@@ -13,6 +13,9 @@ requires-python = ">=3.12"
 readme = "README.md"
 license = {text = "MIT"}
 
+[project.scripts]
+cb2cbz = "cb2cbz.__main__:main"
+
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
@@ -49,3 +52,6 @@ convention = "google"
 [tool.black]
 line-length = 88
 target-version = ["py312"]
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib",]

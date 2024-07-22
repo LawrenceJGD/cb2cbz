@@ -16,8 +16,10 @@ if TYPE_CHECKING:
 _format = format
 _input = input
 
-JPEG_RANGE = range(101)
-PNG_RANGE = range(10)
+JPEG_RANGE: Final[range] = range(101)
+PNG_RANGE: Final[range] = range(10)
+JPEG_DEFAULT: Final[int] = 90
+PNG_DEFAULT: Final[int] = 6
 
 
 class ImageFormat(StrEnum):
@@ -34,7 +36,7 @@ class ImageFormat(StrEnum):
 class JpegXLOptions:
     """Options for encoding JPEG-XL images."""
 
-    lossless: bool
+    lossless: bool = True
 
     @classmethod
     def parse_options(cls, options: str) -> Self:
@@ -56,6 +58,7 @@ class JpegXLOptions:
             msg: str
             if not value:
                 msg = f"{name} option value is empty"
+                raise ValueError(msg)
             if name.lower() == "lossless":
                 lossless = parse_str_bool(value, "lossless")
             else:
@@ -84,19 +87,6 @@ class Parameters:
     output: Path
 
 
-def parse_quality(value: str) -> int:
-    """Parses --quality CLI parameter and return it as an int."""
-    try:
-        num: int = int(value)
-    except ValueError:
-        msg: str = "--quality must be a valid integer number"
-        raise argparse.ArgumentTypeError(msg) from None
-    if num < 0:
-        msg = "--quality must be greater or equal than 0"
-        raise argparse.ArgumentTypeError(msg)
-    return num
-
-
 def parse_str_bool(value: str, name: str) -> bool:
     """Parse boolean options and return them.
 
@@ -108,9 +98,9 @@ def parse_str_bool(value: str, name: str) -> bool:
     Raises:
         ValueError: If the value is not "1", "0", "true" or "false".
     """
-    if value in ("true", "1"):
+    if value.lower() in ("true", "1"):
         return True
-    if value in ("false", "0"):
+    if value.lower() in ("false", "0"):
         return False
     msg: str = f'{name} value must be "1", "0", "true" or "false"'
     raise ValueError(msg)
@@ -137,12 +127,13 @@ def parse_params(argv: Sequence[str] | None = None) -> Parameters:
     parser.add_argument(
         "-q",
         "--quality",
-        type=parse_quality,
+        type=int,
         help=(
             "Compression quality. Its meaning depends on the format. For "
             '"jpeg", "jpegli" and "jpegxl" it goes from 0 to 100, the default '
             'for them is 90. For "jpegxl" 100 means lossless. For "png" it '
-            "goes from 0 to 9 and the default is 6."
+            'goes from 0 to 9 and the default is 6. For "no-change" is '
+            'ignored.'
         ),
     )
     parser.add_argument(
@@ -174,23 +165,23 @@ def parse_params(argv: Sequence[str] | None = None) -> Parameters:
 
     if params.format in (ImageFormat.JPEG, ImageFormat.JPEGXL, ImageFormat.JPEGLI):
         if params.quality is None:
-            quality = 90
+            quality = JPEG_DEFAULT
         elif params.quality in JPEG_RANGE:
             quality = params.quality
         else:
             parser.error(
-                f"--quality for {params.format} only admits values from 0 to 100"
+                f"--quality for {params.format} only admits numbers from 0 to 100"
             )
         if params.format == ImageFormat.JPEGXL and params.options is not None:
             options = JpegXLOptions.parse_options(params.options)
 
     elif params.format == ImageFormat.PNG:
         if params.quality is None:
-            quality = 6
+            quality = PNG_DEFAULT
         elif params.quality in PNG_RANGE:
             quality = params.quality
         else:
-            parser.error("--quality for png only admits values from 0 to 9")
+            parser.error("--quality for png only admits numbers from 0 to 9")
 
     output: Path = (
         params.input.with_suffix(".cbz") if params.output is None else params.output
