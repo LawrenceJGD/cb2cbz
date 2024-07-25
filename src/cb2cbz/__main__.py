@@ -8,10 +8,15 @@ import argparse
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Self
+from typing import IO, TYPE_CHECKING, Any, Final, Self
+
+import libarchive
+import libarchive.entry
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from libarchive.read import ArchiveRead, ArchiveWrite
 
 _format = format
 _input = input
@@ -133,7 +138,7 @@ def parse_params(argv: Sequence[str] | None = None) -> Parameters:
             '"jpeg", "jpegli" and "jpegxl" it goes from 0 to 100, the default '
             'for them is 90. For "jpegxl" 100 means lossless. For "png" it '
             'goes from 0 to 9 and the default is 6. For "no-change" is '
-            'ignored.'
+            "ignored."
         ),
     )
     parser.add_argument(
@@ -197,9 +202,79 @@ def parse_params(argv: Sequence[str] | None = None) -> Parameters:
     return parsed
 
 
+def get_entry_attrs(entry: libarchive.ArchiveEntry) -> dict[str, Any]:
+    """Get metadata from the entry and return it if they're not None."""
+    attr_names: tuple[str] = (
+        "uid",
+        "gid",
+        "uname",
+        "gname",
+        "atime",
+        "mtime",
+        "ctime",
+        "birthtime",
+        "rdev",
+        "rdevmajor",
+        "rdevminor",
+    )
+    attrs: dict[str, Any] = {}
+    for name in attr_names:
+        attr_data: Any = getattr(entry, name)
+        if attr_data is not None:
+            attrs[name] = attr_data
+    return attrs
+
+
+def save_file(
+    entry: libarchive.ArchiveEntry,
+    archive: ArchiveWrite,
+    img_format: ImageFormat,
+    options: JpegXLOptions | None,
+) -> None:
+    """Save files to the output .cbz file.
+
+    Args:
+        entry: Entry from the input file to save in the .cbz file.
+        archive: File where the data must be saved.
+        img_format: Format to which the image should be converted.
+        options: Options for image convertion.
+    """
+    if img_format == ImageFormat.NO_CHANGE:
+        archive.add_file_from_memory(
+            entry.pathname,
+            entry.size,
+            entry.get_blocks(),
+            entry.filetype,
+            entry.perm,
+            **get_entry_attrs(entry),
+        )
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Main function that executes the script."""
-    parse_params(argv)
+    params: Parameters = parse_params(argv)
+    input_arc: ArchiveRead
+    output_arc: ArchiveWrite
+    with (
+        libarchive.file_reader(str(params.input)) as input_arc,
+        libarchive.file_writer(
+            str(params.output), "zip", options="compression=store"
+        ) as output_arc,
+    ):
+        entry: libarchive.ArchiveEntry
+        for entry in input_arc:
+            if entry.isdir:
+                output_arc.add_file_from_memory(
+                    entry.pathname,
+                    0,
+                    b"",
+                    entry.filetype,
+                    entry.perm,
+                    **get_entry_attrs(entry),
+                )
+
+            elif entry.isreg:
+                save_file(entry, output_arc, params.format, params.options)
 
 
 if __name__ == "__main__":

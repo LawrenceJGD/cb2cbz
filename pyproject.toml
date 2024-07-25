@@ -8,6 +8,7 @@ authors = [
 dependencies = [
     "pillow>=10.4.0",
     "pillow-jxl-plugin>=1.2.5",
+    "libarchive-c>=5.1",
 ]
 requires-python = ">=3.12"
 readme = "README.md"
@@ -29,6 +30,10 @@ lint = [
     "mypy>=1.10.1",
     "black>=24.4.2",
     "ruff>=0.5.3",
+]
+tests = [
+    "pytest>=8.3.1",
+    "pytest-datadir>=1.5.0",
 ]
 
 [tool.ruff]
@@ -54,4 +59,5 @@ line-length = 88
 target-version = ["py312"]
 
 [tool.pytest.ini_options]
-addopts = ["--import-mode=importlib",]
+addopts = ["--import-mode=importlib"]
+pythonpath = ["."]

@@ -2,6 +2,7 @@
 
 # ruff: noqa: S101
 
+from itertools import chain
 from pathlib import Path
 
 import pytest
@@ -200,14 +201,26 @@ class TestParseParams:
 
     def test_invalid_quality(self):
         """Test if it exits because of an invalid PNG quality."""
-        for i in range(-10, 0):
+        for i in chain(range(-10, 0), range(10, 20)):
             with pytest.raises(SystemExit):
                 __main__.parse_params(
                     ("--format", "png", "--quality", str(i), "test.cbr")
                 )
 
-        for i in range(10, 20):
-            with pytest.raises(SystemExit):
-                __main__.parse_params(
-                    ("--format", "png", "--quality", str(i), "test.cbr")
-                )
+
+class TestMain:
+    """Tests for main() function."""
+
+    @pytest.mark.parametrize("ext", ("cbt", "cb7", "cbr", "cbz"))
+    def test_cb_to_cbz_default(self, shared_datadir, tmp_path, ext):
+        """Test conversion from comic book to .cbz."""
+        in_path = str(shared_datadir / f"xkcd.{ext}")
+        out_path = str(tmp_path / f"test_{ext}.cbz")
+        __main__.main((in_path, out_path))
+
+    @pytest.mark.parametrize("ext", ("cbt", "cb7", "cbr", "cbz"))
+    def test_cb_to_cbz_no_change(self, shared_datadir, tmp_path, ext):
+        """Test conversion from comic book to .cbz using no-change."""
+        in_path = str(shared_datadir / f"xkcd.{ext}")
+        out_path = str(tmp_path / f"test_{ext}.cbz")
+        __main__.main(("--format", "no-change", in_path, out_path))
