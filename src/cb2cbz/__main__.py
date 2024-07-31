@@ -23,7 +23,7 @@ from libarchive import (  # type: ignore[import-untyped]
 from libarchive.write import ArchiveWrite  # type: ignore[import-untyped]
 from PIL import Image, UnidentifiedImageError
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Sequence
 
     from libarchive.read import (  # type: ignore[import-untyped]
