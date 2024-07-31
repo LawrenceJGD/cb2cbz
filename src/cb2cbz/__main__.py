@@ -39,23 +39,30 @@ PNG_RANGE: Final[range] = range(10)
 JPEG_DEFAULT: Final[int] = 90
 PNG_DEFAULT: Final[int] = 6
 
-EFFORT_RANGE = range(1, 11)
-DECODING_SPEED_RANGE = range(10)
+DEFAULT_EFFORT: Final[int] = 7
+DEFAULT_DECODING_SPEED: Final[int] = 0
+
+EFFORT_RANGE: Final[range] = range(1, 11)
+DECODING_SPEED_RANGE: Final[range] = range(10)
 
 
 def errormsg(msg: str, code: int = 0) -> None:
-    """Imprime un mensaje de error.
+    """Prints an error message.
 
     Args:
-        msg: mensaje a imprimir.
-        code: código de salida. Si es `0` el mensaje será una
-            advertencia, pero si es mayor a `0` será un mensaje de error
-            y el programa cerrará con ese código.
+        msg: Message that must be printed.
+        code: Exit code. If it's 0 then the message will be a warning,
+            else will be an error message and the program will closen
+            with that code.
+
+    Raises:
+        ValueError: If the code is not between 0 and 255.
     """
     if code not in range(256):
-        exc_msg = "code no esta entre 0 y 255"
-        raise ValueError(exc_msg)
-    msg_type: str = "error" if code > 0 else "advertencia"
+        msg: str = "code is not between 0 and 255"
+        raise ValueError(msg)
+
+    msg_type: str = "Error" if code > 0 else "Warning"
     print(f"{Path(sys.argv[0]).name}: {msg_type}: {msg}", file=sys.stderr)
     if code > 0:
         sys.exit(code)
@@ -150,6 +157,10 @@ class JpegConverter(BaseConverter):
         """
         self.quality = quality
 
+    @classmethod
+    def parse_options(cls, options: str) -> Self:
+        return cls()
+
     def convert(self, in_buffer: BytesIO) -> ImageData:
         """Convert an image into JPEG and return it.
 
@@ -215,15 +226,15 @@ class JpegXLConverter(BaseConverter):
     format = ImageFormat.JPEGXL
     pil_format = "JXL"
     extension = ".jxl"
-    quality: int = JPEG_DEFAULT
+    quality: int
     effort: int
     decoding_speed: int
 
     def __init__(
         self,
         quality: int = JPEG_DEFAULT,
-        effort: int = 7,
-        decoding_speed: int = 0,
+        effort: int = DEFAULT_EFFORT,
+        decoding_speed: int = DEFAULT_DECODING_SPEED,
     ):
         """Initializes the object.
 
@@ -257,8 +268,8 @@ class JpegXLConverter(BaseConverter):
         Raises:
             ValueError: If there are invalid options or invalid values.
         """
-        effort: int = 7
-        decoding_speed: int = 0
+        effort: int = DEFAULT_EFFORT
+        decoding_speed: int = DEFAULT_DECODING_SPEED
         opt: str
         for opt in options.split(","):
             if not opt:
@@ -277,9 +288,9 @@ class JpegXLConverter(BaseConverter):
 
             if lname == "effort":
                 effort = parse_str_int(value, EFFORT_RANGE, "effort")
-            elif lname == "decoding_speed":
+            elif lname == "decoding-speed":
                 decoding_speed = parse_str_int(
-                    value, DECODING_SPEED_RANGE, "decoding_speed"
+                    value, DECODING_SPEED_RANGE, "decoding-speed"
                 )
             else:
                 msg = f"{name} is not a valid option for jpegxl"

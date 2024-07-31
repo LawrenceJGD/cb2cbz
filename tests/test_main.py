@@ -2,95 +2,130 @@
 
 # ruff: noqa: S101
 
+import sys
 from itertools import chain
 from pathlib import Path
+from types import NoneType
 
 import pytest
 from cb2cbz import __main__
 
 
-class TestJpegXLOptions:
-    """Test JpegXLOptions methods."""
+class TestErrormsg:
+    """Test errormsg function."""
 
-    @pytest.mark.parametrize("args", [{}, {"lossless": True}, {"lossless": False}])
-    def test_init(self, args):
+    def test_errormsg_default(self, capsys):
+        """Test default args for errormsg."""
+        __main__.errormsg("test")
+        captured = capsys.readouterr()
+        assert captured.err.strip() == f"{Path(sys.argv[0]).name}: Warning: test"
+
+    def test_errormsg_warning(self, capsys):
+        """Test errormsg warnings."""
+        __main__.errormsg("test", 0)
+        captured = capsys.readouterr()
+        assert captured.err.strip() == f"{Path(sys.argv[0]).name}: Warning: test"
+
+    def test_errormsg_error(self, capsys):
+        """Test errormsg errors."""
+        for i in range(1, 256):
+            with pytest.raises(SystemExit):
+                __main__.errormsg("test", i)
+
+            captured = capsys.readouterr()
+            assert captured.err.strip() == f"{Path(sys.argv[0]).name}: Error: test"
+
+    def test_errormsg_invalid_code(self):
+        """Test errormsg using invalid numbers for code arg."""
+        for i in chain(range(-256, 0), range(256, 512)):
+            with pytest.raises(ValueError, match="code is not between 0 and 255"):
+                __main__.errormsg("test", i)
+
+
+class TestJpegXLConverter:
+    """Test JpegXLConverter methods."""
+
+    def test_init(self):
         """Test __init__ method."""
-        options = __main__.JpegXLOptions(**args)
-        for key, value in args.items():
-            assert getattr(options, key) == value
+        test_quality = 12
+        test_effort = 3
+        test_decoding_speed = 4
 
-    @pytest.mark.parametrize("value", ("=true", "=TRUE", "=1"))
-    def test_parse_options_lossless_true(self, value):
-        """Test parse_options with lossless."""
-        for name in ("lossless", "LOSSLESS", "lOsSlEsS"):
-            options = __main__.JpegXLOptions.parse_options(f"{name}{value}")
-            assert isinstance(options, __main__.JpegXLOptions)
-            assert options.lossless is True
+        converter = __main__.JpegXLConverter(
+            quality=test_quality, effort=test_effort, decoding_speed=test_decoding_speed
+        )
 
-    @pytest.mark.parametrize("value", ("=false", "=FALSE", "=0"))
-    def test_parse_options_lossless_false(self, value):
-        """Test parse_options with lossless with false value."""
-        for name in ("lossless", "LOSSLESS", "lOsSlEsS"):
-            options = __main__.JpegXLOptions.parse_options(f"{name}{value}")
-            assert isinstance(options, __main__.JpegXLOptions)
-            assert options.lossless is False
+        assert isinstance(converter, __main__.JpegXLConverter)
+        assert converter.quality == test_quality
+        assert converter.effort == test_effort
+        assert converter.decoding_speed == test_decoding_speed
 
-    def test_parse_options_invalid_lossless(self):
-        """Test invalid value for lossless option."""
-        with pytest.raises(ValueError):
-            __main__.JpegXLOptions.parse_options("lossless=abc")
+    def test_parse_options_effort(self):
+        """Test valid values for effort option."""
+        for num in __main__.EFFORT_RANGE:
+            converter = __main__.JpegXLConverter.parse_options(f"effort={num}")
+            assert isinstance(converter, __main__.JpegXLConverter)
+            assert converter.effort == num
+
+    def test_parse_options_invalid_effort(self):
+        """Test invalid values for effort option."""
+        for num in chain(range(-10, 1), range(11, 21)):
+            with pytest.raises(ValueError):
+                __main__.JpegXLConverter.parse_options(f"effort={num}")
+
+    def test_parse_options_decoding_speed(self):
+        """Test valid values for decoding_speed option."""
+        for num in __main__.DECODING_SPEED_RANGE:
+            converter = __main__.JpegXLConverter.parse_options(f"decoding-speed={num}")
+            assert isinstance(converter, __main__.JpegXLConverter)
+            assert converter.decoding_speed == num
+
+    def test_parse_options_invalid_decoding_speed(self):
+        """Test invalid values for decoding_speed option."""
+        for num in chain(range(-10, 0), range(10, 20)):
+            with pytest.raises(ValueError):
+                __main__.JpegXLConverter.parse_options(f"decoding-speed={num}")
 
     @pytest.mark.parametrize("name", ("a", "de", "fg"))
     def test_invalid_parse_options(self, name):
         """Test parse_options methods using invalid options."""
         with pytest.raises(ValueError, match=f"{name} option value is empty"):
-            __main__.JpegXLOptions.parse_options(name)
+            __main__.JpegXLConverter.parse_options(name)
 
 
-def test_parameter_init():
-    """Test Parameter.__init__ method."""
-    params1 = __main__.Parameters(
-        format=__main__.ImageFormat.JPEG,
-        quality=15,
-        options=__main__.JpegXLOptions(lossless=True),
-        input=Path("test.cbr"),
-        output=Path("test.cbz"),
+@pytest.mark.parametrize(
+    "converter",
+    [
+        __main__.JpegConverter,
+        __main__.JpegliConverter,
+        __main__.JpegXLConverter,
+        __main__.PngConverter,
+    ],
+)
+def test_parameter_init(converter):
+    """Test Parameter.__init__."""
+    params = __main__.Parameters(
+        converter=converter, input=Path("test.cbr"), output=Path("tested.cbz")
     )
-    params2 = __main__.Parameters(
-        format=__main__.ImageFormat.JPEG,
-        quality=None,
-        options=None,
-        input=Path("test.cbr"),
-        output=Path("test.cbz"),
-    )
-
-    assert params1.format == __main__.ImageFormat.JPEG
-    assert params1.quality == 15  # noqa: PLR2004
-    assert params1.options == __main__.JpegXLOptions(lossless=True)
-    assert params1.input == Path("test.cbr")
-    assert params1.output == Path("test.cbz")
-
-    assert params2.format == __main__.ImageFormat.JPEG
-    assert params2.quality is None
-    assert params2.options is None
-    assert params2.input == Path("test.cbr")
-    assert params2.output == Path("test.cbz")
+    assert params.converter == converter
+    assert params.input == Path("test.cbr")
+    assert params.output == Path("tested.cbz")
 
 
 class TestParseStrBool:
     """Test parse_str_bool function."""
 
     @pytest.mark.parametrize("value", ("1", "true", "TRUE", "tRuE"))
-    def test_true(self, value):
+    def test_parse_str_true(self, value):
         """Test true values."""
         assert __main__.parse_str_bool(value, "test")
 
     @pytest.mark.parametrize("value", ("0", "false", "FALSE", "fAlSe"))
-    def test_false(self, value):
+    def test_parse_str_false(self, value):
         """Test false values."""
         assert not __main__.parse_str_bool(value, "test")
 
-    def test_invalid(self):
+    def test_parse_str_invalid(self):
         """Test invalid values."""
         with pytest.raises(
             ValueError, match='test value must be "1", "0", "true" or "false"'
@@ -98,8 +133,47 @@ class TestParseStrBool:
             __main__.parse_str_bool("testing", "test")
 
 
+class TestParseStrInt:
+    """Tests for parse_str_int."""
+
+    def test_valid_parse_str_int(self):
+        """Test valid values for parse_str_int."""
+        test_range = range(-5, 6)
+        for i in test_range:
+            assert __main__.parse_str_int(str(i), test_range, "test") == i
+
+    def test_invalid_parse_str_int(self):
+        """Test invalid values for parse_str_int."""
+        test_range = range(30)
+        for i in ("a", "bC", "0x15", "0o15"):
+            with pytest.raises(ValueError):
+                __main__.parse_str_int(i, test_range, "test")
+
+    def test_parse_str_int_not_in_limits(self):
+        """Test numbers that are out of limits."""
+        out_of_limits = chain(range(-5, 0), range(6, 11))
+        test_range = range(6)
+        for i in out_of_limits:
+            with pytest.raises(
+                ValueError,
+                match=(
+                    "test value must be an integer between "
+                    f"{test_range.start} and {test_range.stop - 1}"
+                ),
+            ):
+                __main__.parse_str_int(i, test_range, "test")
+
+
 class TestParseParams:
     """Test parse_params function."""
+
+    format_converters = [
+        (__main__.ImageFormat.JPEG, __main__.JpegConverter),
+        # (__main__.ImageFormat.JPEGLI, __main__.JpegliConverter),
+        (__main__.ImageFormat.JPEGXL, __main__.JpegXLConverter),
+        # (__main__.ImageFormat.PNG, __main__.PngConverter),
+        (__main__.ImageFormat.NO_CHANGE, NoneType),
+    ]
 
     def test_input_only(self):
         """Test only with input argument."""
@@ -109,9 +183,7 @@ class TestParseParams:
         assert isinstance(params.output, Path)
         assert params.input == Path("test.cbr")
         assert params.output == Path("test.cbz")
-        assert params.format == __main__.ImageFormat.NO_CHANGE
-        assert params.quality is None
-        assert params.options is None
+        assert params.converter is None
 
     def test_output(self):
         """Test output argument."""
@@ -122,62 +194,42 @@ class TestParseParams:
         assert params.input == Path("test.cbr")
         assert params.output == Path("tested.cbz")
 
-    @pytest.mark.parametrize("format_", tuple(__main__.ImageFormat))
-    def test_short_format(self, format_):
+    @pytest.mark.parametrize("format_,converter", format_converters)
+    def test_short_format(self, format_, converter):
         """Test -f argument."""
         params = __main__.parse_params(("-f", str(format_), "test.cbr"))
         assert isinstance(params, __main__.Parameters)
-        assert params.format == format_
+        print(type(params.converter))
+        assert isinstance(params.converter, converter)
 
-    @pytest.mark.parametrize("format_", tuple(__main__.ImageFormat))
-    def test_long_format(self, format_):
+    @pytest.mark.parametrize("format_,converter", format_converters)
+    def test_long_format(self, format_, converter):
         """Test --format argument."""
         params1 = __main__.parse_params(("--format", str(format_), "test.cbr"))
         params2 = __main__.parse_params((f"--format={format_}", "test.cbr"))
         assert isinstance(params1, __main__.Parameters)
         assert isinstance(params2, __main__.Parameters)
+        assert isinstance(params1.converter, converter)
+        assert isinstance(params2.converter, converter)
 
-    @pytest.mark.parametrize("format_", tuple(__main__.ImageFormat))
-    def test_same_format(self, format_):
-        """Test that -f, --format and --format= give the same object."""
-        params1 = __main__.parse_params(("-f", str(format_), "test.cbr"))
-        params2 = __main__.parse_params(("--format", str(format_), "test.cbr"))
-        params3 = __main__.parse_params((f"--format={format_}", "test.cbr"))
-        assert params1 == params2 and params1 == params3
-
-    @pytest.mark.parametrize("format_", ("jpeg", "jpegxl", "jpegli"))
+    @pytest.mark.parametrize(
+        "format_", ("jpeg", "jpegxl")
+    )  # TODO @LawrenceJGD: add "jpegli"
     def test_default_quality(self, format_):
         """Test default quality for JPEG formats."""
         params = __main__.parse_params(("--format", format_, "test.cbr"))
-        assert params.quality == 90  # noqa: PLR2004
+        assert params.converter.quality == 90  # noqa: PLR2004
 
-    def test_default_png_quality(self):
-        """Test default quality for PNG."""
-        params = __main__.parse_params(("--format", "png", "test.cbr"))
-        assert params.quality == 6  # noqa: PLR2004
+    # TODO @LawrenceJGD: Add when PNG convertion is ready
+    # def test_default_png_quality(self):
+    #     """Test default quality for PNG."""
+    #     params = __main__.parse_params(("--format", "png", "test.cbr"))
+    #     assert params.converter.quality == 6  # noqa: PLR2004
 
     def test_default_no_change_quality(self):
         """Test default quality for no-change."""
         params = __main__.parse_params(("--format", "no-change", "test.cbr"))
-        assert params.quality is None
-
-    def test_jpegxl_true_lossless_option(self):
-        """Test JPEG XL lossless option when the value is true."""
-        for i in ("true", "1"):
-            params = __main__.parse_params(
-                ("--format", "jpegxl", "--options", f"lossless={i}", "test.cbr")
-            )
-            assert isinstance(params.options, __main__.JpegXLOptions)
-            assert params.options.lossless
-
-    def test_jpegxl_false_lossless_option(self):
-        """Test JPEG XL lossless option when the value is false."""
-        for i in ("false", "0"):
-            params = __main__.parse_params(
-                ("--format", "jpegxl", "--options", f"lossless={i}", "test.cbr")
-            )
-            assert isinstance(params.options, __main__.JpegXLOptions)
-            assert not params.options.lossless
+        assert params.converter is None
 
     def test_invalid_format(self):
         """Test if it exits because of an invalid format."""

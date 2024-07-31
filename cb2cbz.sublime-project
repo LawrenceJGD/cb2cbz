@@ -7,6 +7,7 @@
 		"SublimeLinter.linters.mypy.python": "${project_path}/.venv/bin/python",
 		"SublimeLinter.linters.mypy.executable": ["${project_path}/.venv/bin/dmypy", "run", "--"],
 		"SublimeLinter.linters.mypy.args": ["--warn-redundant-casts"],
-		"SublimeLinter.linters.mypy.follow-imports": "normal"
+		"SublimeLinter.linters.mypy.follow-imports": "normal",
+		"SublimeLinter.linters.mypy.excludes": ["${project_path}/tests/*"]
 	}
 }
