@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from io import BytesIO
 from pathlib import Path, PurePath
-from typing import TYPE_CHECKING, Any, ClassVar, Final, Self, assert_never
+from typing import TYPE_CHECKING, Any, BinaryIO, ClassVar, Final, Self, assert_never
 
 import pillow_jxl
 from libarchive import (  # type: ignore[import-untyped]
@@ -43,7 +43,7 @@ DEFAULT_EFFORT: Final[int] = 7
 DEFAULT_DECODING_SPEED: Final[int] = 0
 
 EFFORT_RANGE: Final[range] = range(1, 11)
-DECODING_SPEED_RANGE: Final[range] = range(10)
+DECODING_SPEED_RANGE: Final[range] = range(5)
 
 
 def errormsg(msg: str, code: int = 0) -> None:
@@ -59,8 +59,8 @@ def errormsg(msg: str, code: int = 0) -> None:
         ValueError: If the code is not between 0 and 255.
     """
     if code not in range(256):
-        msg: str = "code is not between 0 and 255"
-        raise ValueError(msg)
+        errmsg: str = "code is not between 0 and 255"
+        raise ValueError(errmsg)
 
     msg_type: str = "Error" if code > 0 else "Warning"
     print(f"{Path(sys.argv[0]).name}: {msg_type}: {msg}", file=sys.stderr)
@@ -121,7 +121,7 @@ class BaseConverter(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def convert(self, in_buffer: BytesIO) -> ImageData | bytes:
+    def convert(self, in_buffer: BinaryIO) -> ImageData | bytes:
         """Convert an image into another format and return it.
 
         Args:
@@ -161,7 +161,7 @@ class JpegConverter(BaseConverter):
     def parse_options(cls, options: str) -> Self:
         return cls()
 
-    def convert(self, in_buffer: BytesIO) -> ImageData:
+    def convert(self, in_buffer: BinaryIO) -> ImageData:
         """Convert an image into JPEG and return it.
 
         Args:
@@ -251,11 +251,14 @@ class JpegXLConverter(BaseConverter):
             ValueError: If any of the args is invalid.
         """
         if quality not in JPEG_RANGE:
-            raise ValueError
+            msg: str = "quality must be an int between 0 and 100"
+            raise ValueError(msg)
         if effort not in EFFORT_RANGE:
-            raise ValueError
+            msg = "effort must be an int between 1 and 10"
+            raise ValueError(msg)
         if decoding_speed not in DECODING_SPEED_RANGE:
-            raise ValueError
+            msg = "decoding_speed must be an int between 0 and 4"
+            raise ValueError(msg)
 
         self.quality = quality
         self.effort = effort
@@ -298,7 +301,7 @@ class JpegXLConverter(BaseConverter):
 
         return cls(effort=effort, decoding_speed=decoding_speed)
 
-    def convert(self, in_buffer: BytesIO) -> ImageData | bytes:
+    def convert(self, in_buffer: BinaryIO) -> ImageData | bytes:
         """Convert an image into JPEG XL and return it.
 
         Args:
@@ -319,7 +322,8 @@ class JpegXLConverter(BaseConverter):
         """
         enc: pillow_jxl.Encoder | None = None
         img: Image.Image = Image.open(in_buffer)
-        if img.format == "JPEG":
+
+        if img.format == "JPEG" and img.mode in ("RGB", "L"):
             enc = pillow_jxl.Encoder(  # type: ignore[call-arg]
                 mode=img.mode,
                 parallel=True,
@@ -331,40 +335,52 @@ class JpegXLConverter(BaseConverter):
                 use_original_profile=True,
             )
 
-        else:
-            if img.format == "PNG":
-                # This is necessary for getting EXIF data if the PNG files has it.
-                img.load()
+            buf_data: bytes
+            if isinstance(in_buffer, BytesIO):
+                buf_data = in_buffer.getvalue()
+            else:
+                in_buffer.seek(0)
+                buf_data = in_buffer.read()
+            in_buffer.close()
 
-            if img.mode == "1":
+            exif: bytes | None = img.info.get("exif", img.getexif().tobytes())
+            if exif and exif.startswith(b"Exif\x00\x00"):
+                exif = exif[6:]
+
+            with img:
+                return enc(  # type: ignore[call-arg]
+                    buf_data,
+                    img.width,
+                    img.height,
+                    jpeg_encode=True,
+                    exif=exif,
+                    jumb=img.info.get("jumb"),
+                    xmp=img.info.get("xmp"),
+                )
+
+        if img.format == "PNG":
+            # This is necessary for getting EXIF data if the PNG files has it.
+            img.load()
+
+        if img.mode == "1":
+            with img:
                 return ImageData(img.convert("L"), img.info, new=True)
 
-            if img.mode != "RGB" and "transparency" in img.info:
+        if img.mode not in ("RGB", "L") and not img.has_transparency_data:
+            with img:
                 return ImageData(
                     img.convert("L" if img.mode == "LA" else "RGB"), img.info, new=True
                 )
 
-            if img.mode not in ("RGB", "RGBA", "L", "LA"):
-                return ImageData(img.convert("RGBA"), img.info, new=True)
+        if img.mode not in ("RGB", "RGBA", "L", "LA"):
+            with img:
+                return ImageData(
+                    img.convert("RGBA" if img.has_transparency_data else "RGB"),
+                    img.info,
+                    new=True,
+                )
 
-            return ImageData(img, img.info, new=False)
-
-        buf_data: bytes = in_buffer.getvalue()
-        in_buffer.close()
-
-        exif: bytes | None = img.info.get("exif", img.getexif().tobytes())
-        if exif and exif.startswith(b"Exif\x00\x00"):
-            exif = exif[6:]
-
-        return enc(  # type: ignore[call-arg]
-            buf_data,
-            img.width,
-            img.height,
-            jpeg_encode=True,
-            exif=exif,
-            jumb=img.info.get("jumb"),
-            xmp=img.info.get("xmp"),
-        )
+        return ImageData(img, img.info, new=False)
 
 
 class PngConverter(BaseConverter):
@@ -387,7 +403,7 @@ class PngConverter(BaseConverter):
         """
         self.quality = quality
 
-    def convert(self, in_buffer: BytesIO) -> ImageData:
+    def convert(self, in_buffer: BinaryIO) -> ImageData:
         """Convert an image into PNG and return it.
 
         Args:

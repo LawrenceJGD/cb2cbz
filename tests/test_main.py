@@ -3,12 +3,14 @@
 # ruff: noqa: S101
 
 import sys
+from io import BytesIO
 from itertools import chain
 from pathlib import Path
 from types import NoneType
 
 import pytest
 from cb2cbz import __main__
+from PIL import Image
 
 
 class TestErrormsg:
@@ -60,6 +62,30 @@ class TestJpegXLConverter:
         assert converter.effort == test_effort
         assert converter.decoding_speed == test_decoding_speed
 
+    def test_init_invalid_quality(self):
+        """Test JpegXLConverter.__init__ using invalid quality values."""
+        for i in (-1, 101):
+            with pytest.raises(
+                ValueError, match="quality must be an int between 0 and 100"
+            ):
+                __main__.JpegXLConverter(quality=i)
+
+    def test_init_invalid_effort(self):
+        """Test JpegXLConverter.__init__ using invalid effort values."""
+        for i in (0, 11):
+            with pytest.raises(
+                ValueError, match="effort must be an int between 1 and 10"
+            ):
+                __main__.JpegXLConverter(effort=i)
+
+    def test_init_invalid_decoding_speed(self):
+        """Test JpegXLConverter.__init__ using an invalid decoding_speed."""
+        for i in (-1, 5):
+            with pytest.raises(
+                ValueError, match="decoding_speed must be an int between 0 and 4"
+            ):
+                __main__.JpegXLConverter(decoding_speed=i)
+
     def test_parse_options_effort(self):
         """Test valid values for effort option."""
         for num in __main__.EFFORT_RANGE:
@@ -86,11 +112,100 @@ class TestJpegXLConverter:
             with pytest.raises(ValueError):
                 __main__.JpegXLConverter.parse_options(f"decoding-speed={num}")
 
-    @pytest.mark.parametrize("name", ("a", "de", "fg"))
-    def test_invalid_parse_options(self, name):
+    def test_invalid_parse_options(self):
         """Test parse_options methods using invalid options."""
-        with pytest.raises(ValueError, match=f"{name} option value is empty"):
-            __main__.JpegXLConverter.parse_options(name)
+        with pytest.raises(ValueError, match="test option value is empty"):
+            __main__.JpegXLConverter.parse_options("test")
+
+    def test_parse_options_invalid_name(self):
+        """Test parse_options methods using invalid options."""
+        with pytest.raises(ValueError, match="test is not a valid option for jpegxl"):
+            __main__.JpegXLConverter.parse_options("test=abc")
+
+    def test_jpegxl_convert_png_l(self, shared_datadir):
+        """Test convert function using a PNG image in mode L."""
+        converter = __main__.JpegXLConverter()
+        with (shared_datadir / "2953_alien_theories.png").open(mode="rb") as img_file:
+            result = converter.convert(img_file)
+            assert isinstance(result, __main__.ImageData)
+            assert isinstance(result.img, Image.Image)
+            assert result.img.mode == "L"
+            assert not result.new
+
+    def test_jpegxl_convert_png_1bit(self, shared_datadir):
+        """Test convert function using a PNG image in mode 1."""
+        converter = __main__.JpegXLConverter()
+        with (shared_datadir / "2952_routine_maintenance_1bit.png").open(
+            mode="rb"
+        ) as img_file:
+            result = converter.convert(img_file)
+            assert isinstance(result, __main__.ImageData)
+            assert isinstance(result.img, Image.Image)
+            assert result.img.mode == "L"
+            assert result.new
+
+    def test_jpegxl_convert_png_l_alpha(self, shared_datadir):
+        """Test convert function using a PNG image in mode LA."""
+        converter = __main__.JpegXLConverter()
+        with (shared_datadir / "2955_pole_vault_L_alpha.png").open(
+            mode="rb"
+        ) as img_file:
+            result = converter.convert(img_file)
+            print(result.img.mode)
+            assert isinstance(result, __main__.ImageData)
+            assert isinstance(result.img, Image.Image)
+            assert result.img.mode == "LA"
+            assert not result.new
+
+    def test_jpegxl_convert_png_rgba(self, shared_datadir):
+        """Test convert function using a PNG image in mode RGBA."""
+        converter = __main__.JpegXLConverter()
+        with (shared_datadir / "2955_pole_vault_rgba.png").open(mode="rb") as img_file:
+            result = converter.convert(img_file)
+            print(result.img.mode)
+            assert isinstance(result, __main__.ImageData)
+            assert isinstance(result.img, Image.Image)
+            assert result.img.mode == "RGBA"
+            assert not result.new
+
+    def test_jpegxl_convert_png_p(self, shared_datadir):
+        """Test convert function using a PNG image in mode P."""
+        converter = __main__.JpegXLConverter()
+        with (shared_datadir / "2955_pole_vault_p.png").open(mode="rb") as img_file:
+            result = converter.convert(img_file)
+            assert isinstance(result, __main__.ImageData)
+            assert isinstance(result.img, Image.Image)
+            assert result.img.mode == "RGB"
+            assert result.new
+
+    def test_jpegxl_convert_png_p_alpha(self, shared_datadir):
+        """Test convert function using a PNG image in mode P with alpha."""
+        converter = __main__.JpegXLConverter()
+        with (shared_datadir / "2955_pole_vault_p_alpha.png").open(
+            mode="rb"
+        ) as img_file:
+            result = converter.convert(img_file)
+            assert isinstance(result, __main__.ImageData)
+            assert isinstance(result.img, Image.Image)
+            assert result.img.mode == "RGBA"
+            assert result.new
+
+    def test_jpegxl_convert_jpeg_file(self, shared_datadir):
+        """Test convert function using a JPEG."""
+        converter = __main__.JpegXLConverter()
+        with (shared_datadir / "2953_alien_theories.jpg").open(mode="rb") as img_file:
+            result = converter.convert(img_file)
+            assert isinstance(result, bytes)
+
+    def test_jpegxl_convert_jpeg_bytesio(self, shared_datadir):
+        """Test convert function using a JPEG from a BytesIO object."""
+        converter = __main__.JpegXLConverter()
+        with (shared_datadir / "2953_alien_theories.jpg").open(mode="rb") as img_file:
+            data = BytesIO(img_file.read())
+
+        with data:
+            result = converter.convert(data)
+            assert isinstance(result, bytes)
 
 
 @pytest.mark.parametrize(
@@ -220,7 +335,7 @@ class TestParseParams:
         params = __main__.parse_params(("--format", format_, "test.cbr"))
         assert params.converter.quality == 90  # noqa: PLR2004
 
-    # TODO @LawrenceJGD: Add when PNG convertion is ready
+    # TODO @LawrenceJGD: Add when PNG conversion is ready
     # def test_default_png_quality(self):
     #     """Test default quality for PNG."""
     #     params = __main__.parse_params(("--format", "png", "test.cbr"))
@@ -266,13 +381,24 @@ class TestMain:
     @pytest.mark.parametrize("ext", ("cbt", "cb7", "cbr", "cbz"))
     def test_cb_to_cbz_default(self, shared_datadir, tmp_path, ext):
         """Test conversion from comic book to .cbz."""
-        in_path = str(shared_datadir / f"xkcd.{ext}")
+        in_path = shared_datadir / f"xkcd.{ext}"
         out_path = str(tmp_path / f"test_{ext}.cbz")
-        __main__.main((in_path, out_path))
+        __main__.main((str(in_path), out_path))
+        assert in_path.exists()
 
     @pytest.mark.parametrize("ext", ("cbt", "cb7", "cbr", "cbz"))
     def test_cb_to_cbz_no_change(self, shared_datadir, tmp_path, ext):
         """Test conversion from comic book to .cbz using no-change."""
-        in_path = str(shared_datadir / f"xkcd.{ext}")
+        in_path = shared_datadir / f"xkcd.{ext}"
         out_path = str(tmp_path / f"test_{ext}.cbz")
-        __main__.main(("--format", "no-change", in_path, out_path))
+        __main__.main(("--format", "no-change", str(in_path), out_path))
+        assert in_path.exists()
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize("ext", ("cbt", "cb7", "cbr", "cbz"))
+    def test_cb_to_cbz_jpegxl(self, shared_datadir, tmp_path, ext):
+        """Test conversion from comic book to .cbz using jpegxl."""
+        in_path = shared_datadir / f"xkcd.{ext}"
+        out_path = str(tmp_path / f"test_{ext}.cbz")
+        __main__.main(("--format", "jpegxl", str(in_path), out_path))
+        assert in_path.exists()
