@@ -24,7 +24,7 @@ from libarchive.write import ArchiveWrite  # type: ignore[import-untyped]
 from PIL import Image, UnidentifiedImageError
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
     from libarchive.read import (  # type: ignore[import-untyped]
         ArchiveRead,
@@ -665,7 +665,7 @@ class EntryStorer:
             **entry_attrs,
         )
 
-    def save_entry(self, entry: ArchiveEntry) -> str:
+    def save_entry(self, entry: ArchiveEntry, name: str) -> None:
         """Saves an entry from the input comic book to the .cbz file.
 
         Args:
@@ -678,23 +678,20 @@ class EntryStorer:
             Path to where the entry was saved in the .cbz file.
         """
 
-        def simple_save():
+        def simple_save(data: bytes | Iterable[bytes]) -> None:
             self.archive.add_file_from_memory(
-                entry.pathname,
+                name,
                 entry.size,
-                entry.get_blocks(),
+                data,
                 entry.filetype,
                 entry.perm,
                 **get_entry_attrs(entry),
             )
 
         if self.converter is None:
-            simple_save()
-            return entry.pathname
+            simple_save(entry.get_blocks())
+            return
 
-        out_name: str = str(
-            PurePath(entry.pathname).with_suffix(self.converter.extension)
-        )
         in_buffer: BytesIO
         with BytesIO() as in_buffer:
             for block in entry.get_blocks():
@@ -708,31 +705,36 @@ class EntryStorer:
                     f'Cannot identify if "{entry.pathname}" is an image. '
                     "Skipping conversion..."
                 )
-                simple_save()
-                return entry.pathname
+                simple_save(in_buffer)
+                return
 
             if isinstance(img_data, bytes):
                 entry_attrs: dict[str, Any] = get_entry_attrs(entry)
                 entry_attrs["mtime"] = datetime.datetime.now().astimezone().timestamp()
 
                 self.archive.add_file_from_memory(
-                    out_name,
+                    name,
                     len(img_data),
                     img_data,
                     entry.filetype,
                     entry.perm,
                     **entry_attrs,
                 )
-                return out_name
+                return
 
             if not img_data.new:
                 with img_data.img:
-                    self._save_buf(out_name, entry, img_data.img, img_data.meta)
-                return out_name
+                    self._save_buf(name, entry, img_data.img, img_data.meta)
+                return
 
         with img_data.img:
-            self._save_buf(out_name, entry, img_data.img, img_data.meta)
-        return out_name
+            self._save_buf(name, entry, img_data.img, img_data.meta)
+
+
+def create_new_name(old_name: str, converter: BaseConverter | None) -> str:
+    return old_name if converter is None else str(
+        PurePath(old_name).with_suffix(converter.extension)
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -752,9 +754,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         ) as output_arc,
     ):
         entry_storer: EntryStorer = EntryStorer(output_arc, params.converter)
+        names: set[str] = set()
         entry: ArchiveEntry
         for entry in input_arc:
             if entry.isdir:
+                stripped: str = entry.pathname.strip("/")
+                if stripped in names:
+                    errormsg(
+                        f'At least two entries got the same name "{entry.pathname}"', 1
+                    )
+                names.add(stripped)
                 output_arc.add_file_from_memory(
                     entry.pathname,
                     0,
@@ -765,7 +774,13 @@ def main(argv: Sequence[str] | None = None) -> None:
                 )
 
             elif entry.isreg:
-                new_name = entry_storer.save_entry(entry)
+                new_name: str = create_new_name(entry.pathname, params.converter)
+                stripped = new_name.strip("/")
+                if stripped in names:
+                    errormsg(f'At least two entries got the same name "{new_name}"', 1)
+                names.add(stripped)
+
+                entry_storer.save_entry(entry, new_name)
                 print(f"{entry.pathname} → {new_name}")
 
 
