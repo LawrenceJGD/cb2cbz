@@ -16,9 +16,9 @@ from PIL import Image
 EXTENSIONS = ("cbt", "cb7", "cbr", "cbz")
 CONVERTERS = (
     __main__.JpegConverter,
-    # __main__.JpegliConverter,
+    __main__.JpegliConverter,
     __main__.JpegXLConverter,
-    # __main__.PngConverter,
+    __main__.PngConverter,
 )
 
 
@@ -293,9 +293,9 @@ class TestParseParams:
 
     format_converters = [
         (__main__.ImageFormat.JPEG, __main__.JpegConverter),
-        # (__main__.ImageFormat.JPEGLI, __main__.JpegliConverter),
+        (__main__.ImageFormat.JPEGLI, __main__.JpegliConverter),
         (__main__.ImageFormat.JPEGXL, __main__.JpegXLConverter),
-        # (__main__.ImageFormat.PNG, __main__.PngConverter),
+        (__main__.ImageFormat.PNG, __main__.PngConverter),
         (__main__.ImageFormat.NO_CHANGE, NoneType),
     ]
 
@@ -336,24 +336,38 @@ class TestParseParams:
         assert isinstance(params1.converter, converter)
         assert isinstance(params2.converter, converter)
 
-    @pytest.mark.parametrize(
-        "format_", ("jpeg", "jpegxl")
-    )  # TODO @LawrenceJGD: add "jpegli"
+    @pytest.mark.parametrize("format_", ("jpeg", "jpegli", "jpegxl"))
     def test_default_quality(self, format_):
         """Test default quality for JPEG formats."""
         params = __main__.parse_params(("--format", format_, "test.cbr"))
         assert params.converter.quality == 90  # noqa: PLR2004
 
-    # TODO @LawrenceJGD: Add when PNG conversion is ready
-    # def test_default_png_quality(self):
-    #     """Test default quality for PNG."""
-    #     params = __main__.parse_params(("--format", "png", "test.cbr"))
-    #     assert params.converter.quality == 6  # noqa: PLR2004
+    def test_default_png_quality(self):
+        """Test default quality for PNG."""
+        params = __main__.parse_params(("--format", "png", "test.cbr"))
+        assert params.converter.quality == 6  # noqa: PLR2004
 
     def test_default_no_change_quality(self):
         """Test default quality for no-change."""
         params = __main__.parse_params(("--format", "no-change", "test.cbr"))
         assert params.converter is None
+
+    @pytest.mark.parametrize("format_", ("jpeg", "jpegli", "jpegxl"))
+    def test_jpeg_quality(self, format_):
+        """Test --quality for jpeg."""
+        quality = 85
+        params = __main__.parse_params(
+            ("--format", format_, "--quality", str(quality), "test.cbr")
+        )
+        assert params.converter.quality == quality
+
+    def test_png_quality(self):
+        """Test --quality for png."""
+        quality = 8
+        params = __main__.parse_params(
+            ("--format", "png", "--quality", str(quality), "test.cbr")
+        )
+        assert params.converter.quality == quality
 
     def test_invalid_format(self):
         """Test if it exits because of an invalid format."""
@@ -362,18 +376,13 @@ class TestParseParams:
 
     def test_invalid_jpeg_quality(self):
         """Test if it exits because of an invalid quality for JPEG."""
-        for i in ("jpeg", "jpegxl", "jpegli"):
-            for j in range(-100, 0):
-                with pytest.raises(SystemExit):
-                    __main__.parse_params(
-                        ("--format", str(i), "--quality", str(j), "test.cbr")
-                    )
-
-            for j in range(101, 200):
-                with pytest.raises(SystemExit):
-                    __main__.parse_params(
-                        ("--format", str(i), "--quality", str(j), "test.cbr")
-                    )
+        for format_, quality in product(
+            ("jpeg", "jpegxl", "jpegli"), chain(range(-100, 0), range(101, 200))
+        ):
+            with pytest.raises(SystemExit):
+                __main__.parse_params(
+                    ("--format", format_, "--quality", str(quality), "test.cbr")
+                )
 
     def test_invalid_quality(self):
         """Test if it exits because of an invalid PNG quality."""

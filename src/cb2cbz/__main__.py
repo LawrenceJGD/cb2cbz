@@ -6,13 +6,15 @@ from __future__ import annotations
 
 import abc
 import argparse
+import contextlib
 import datetime
+import subprocess
 import sys
 from dataclasses import dataclass
 from enum import StrEnum
 from io import BytesIO
 from pathlib import Path, PurePath
-from typing import TYPE_CHECKING, Any, BinaryIO, ClassVar, Final, Self, assert_never
+from typing import TYPE_CHECKING, Any, ClassVar, Final, Self, assert_never
 
 import pillow_jxl
 from libarchive import (  # type: ignore[import-untyped]
@@ -24,7 +26,7 @@ from libarchive.write import ArchiveWrite  # type: ignore[import-untyped]
 from PIL import Image, UnidentifiedImageError
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Generator, Iterable, Sequence
 
     from libarchive.read import (  # type: ignore[import-untyped]
         ArchiveRead,
@@ -38,6 +40,9 @@ JPEG_RANGE: Final[range] = range(101)
 PNG_RANGE: Final[range] = range(10)
 JPEG_DEFAULT: Final[int] = 90
 PNG_DEFAULT: Final[int] = 6
+
+DEFAULT_JPEGLI_PROGRESSIVE: Final[int] = 2
+JPEGLI_PROGRESSIVE_RANGE: Final[range] = range(3)
 
 DEFAULT_EFFORT: Final[int] = 7
 DEFAULT_DECODING_SPEED: Final[int] = 0
@@ -65,7 +70,7 @@ def errormsg(msg: str, code: int = 0) -> None:
     msg_type: str = "Error" if code > 0 else "Warning"
     print(f"{Path(sys.argv[0]).name}: {msg_type}: {msg}", file=sys.stderr)
     if code > 0:
-        sys.exit(code)
+        raise SystemExit(code) from None
 
 
 class ImageFormat(StrEnum):
@@ -101,6 +106,7 @@ class BaseConverter(metaclass=abc.ABCMeta):
     format: ClassVar[ImageFormat]
     pil_format: ClassVar[str | None]
     extension: ClassVar[str]
+    options: ClassVar[set[str]]
     quality: int
 
     @abc.abstractmethod
@@ -112,6 +118,27 @@ class BaseConverter(metaclass=abc.ABCMeta):
         """
 
     @classmethod
+    def _parse_opt(cls, options: str) -> Generator[tuple[str, str], None, None]:
+        opt: str
+        for opt in options.split(","):
+            if not opt:
+                continue
+
+            name: str
+            value: str
+            name, _, value = opt.partition("=")
+
+            msg: str
+            if not value:
+                msg = f"{name} option value is empty"
+                raise ValueError(msg)
+            if name not in cls.options:
+                msg = f"{name} is not a valid option for {cls.format}"
+                raise ValueError(msg)
+
+            yield (name.lower(), value)
+
+    @classmethod
     @abc.abstractmethod
     def parse_options(cls, options: str) -> Self:
         """Parse format options.
@@ -121,7 +148,7 @@ class BaseConverter(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def convert(self, in_buffer: BinaryIO) -> ImageData | bytes:
+    def convert(self, in_buffer: BytesIO) -> ImageData | bytes:
         """Convert an image into another format and return it.
 
         Args:
@@ -147,21 +174,77 @@ class JpegConverter(BaseConverter):
     format = ImageFormat.JPEG
     pil_format = "JPEG"
     extension = ".jpg"
+    options = {"optimize", "progressive", "keep_rgb", "subsampling"}
+    progressive: bool
     quality: int
 
-    def __init__(self, quality: int = JPEG_DEFAULT) -> None:
+    def __init__(
+        self,
+        quality: int = JPEG_DEFAULT,
+        subsampling: str | None = None,
+        *,
+        optimize: bool = False,
+        keep_rgb: bool = False,
+        progressive: bool = True,
+    ) -> None:
         """Initializes the object.
 
         Args:
             quality: Quality of the compressed image.
+            optimize: If True does an extra step when encoding the image
+                to optimize the compression.
+            keep_rgb: Use RGB instead of YCbCr.
+            progressive: Use progressive encoding.
+            subsampling: Subsampling that will be used by the encoder.
+                Available values:
+
+                * "keep": Retains original image settings. Only works
+                    with JPEG.
+                * "4:4:4", "4:2:2", "4:2:0": Specific subsamplings.
+                * None: Will be determined by the encoder.
         """
         self.quality = quality
+        self.optimize = optimize
+        self.keep_rgb = keep_rgb
+        self.progressive = progressive
+        self.subsampling = subsampling
 
     @classmethod
     def parse_options(cls, options: str) -> Self:
-        return cls()
+        """Parse JPEG format options.
 
-    def convert(self, in_buffer: BinaryIO) -> ImageData:
+        Available options are: "optimize", "progressive", "keep_rgb" and
+        "subsamping"
+
+        Raises:
+            ValueError: If there are invalid options or invalid values.
+        """
+        optimize: bool = False
+        progressive: bool = True
+        keep_rgb: bool = False
+        subsampling: str | None = None
+        name: str
+        value: str
+        for name, value in cls._parse_opt(options):
+            if name == "optimize":
+                optimize = parse_str_bool(value, name)
+            elif name == "progressive":
+                progressive = parse_str_bool(value, name)
+            elif name == "keep_rgb":
+                keep_rgb = parse_str_bool(value, name)
+            elif name == "subsampling":
+                if value not in ("keep", "4:4:4", "4:2:2", "4:2:0"):
+                    msg: str = f'"{value}" is not a valid subsampling'
+                    raise ValueError(msg)
+                subsampling = value
+        return cls(
+            optimize=optimize,
+            progressive=progressive,
+            keep_rgb=keep_rgb,
+            subsampling=subsampling,
+        )
+
+    def convert(self, in_buffer: BytesIO) -> ImageData:
         """Convert an image into JPEG and return it.
 
         Args:
@@ -184,24 +267,20 @@ class JpegConverter(BaseConverter):
         if img.mode in ("L", "RGB", "CMYK"):
             return ImageData(img, img.info, new=False)
 
-        if img.info.get("transparency", None) is None:
+        if not img.has_transparency_data:
             return ImageData(img.convert("RGB"), img.info, new=True)
 
         # Adds a white background to a transparent image before
         # deleting alpha channel.
-        with img, Image.new("RGBA", img.size, "WHITE") as new_img:
-            if img.mode in ("RGBA", "1", "LA", "RGBa"):
-                new_img.paste(img, mask=img)
-            else:
-                with img.convert("RGBA") as mask:
-                    new_img.paste(img, mask=mask)
-            return ImageData(new_img.convert("RGB"), img.info, new=True)
+        return ImageData(remove_alpha(img), img.info, new=True)
 
     def get_metadata(self, meta: dict[str, Any]) -> dict[str, Any]:
         """Returns metadata that must be saved to the JPEG file."""
-        return {
+        metadata: dict[str, Any] = {
             i: meta[i] for i in {"dpi", "icc_profile", "exif", "comment"} & meta.keys()
         }
+        metadata["progressive"] = self.progressive
+        return metadata
 
 
 class JpegliConverter(BaseConverter):
@@ -209,15 +288,203 @@ class JpegliConverter(BaseConverter):
 
     format = ImageFormat.JPEGLI
     pil_format = None
+    extension = ".jpg"
+    options = {
+        "progressive",
+        "subsampling",
+        "xyb",
+        "adaptive_quantization",
+        "std_quant",
+        "fixed_code",
+    }
     quality: int
+    progressive: int
+    subsampling: str | None
+    xyb: bool
+    adaptive_quantization: bool
+    std_quant: bool
+    fixed_code: bool
 
-    def __init__(self, quality: int = JPEG_DEFAULT) -> None:
+    def __init__(  # noqa: PLR0913
+        self,
+        quality: int = JPEG_DEFAULT,
+        progressive: int = DEFAULT_JPEGLI_PROGRESSIVE,
+        subsampling: str | None = None,
+        *,
+        xyb: bool = False,
+        adaptive_quantization: bool = True,
+        std_quant: bool = False,
+        fixed_code: bool = False,
+    ) -> None:
         """Initializes the object.
 
         Args:
             quality: Quality of the compressed image.
+            progressive: Number of passes for progressive encoding. 0
+                means no progressive encoding. Must be a int between 0
+                and 2.
+            subsampling: Chroma subsampling setting. Valid values are:
+                "444", "440", "422", "420" or None. If None the default
+                encoder setting will be used.
+            xyb: If True then will convert using XYB colorspace.
+            adaptive_quantization: If True then will use adaptive
+                quantization.
+            std_quant: If True then will use standard quantization
+                tables.
+            fixed_code: If True then will disable Huffman code
+                optimization. progressive must be 0 if fixed_code is
+                True.
         """
         self.quality = quality
+        self.progressive: int = progressive
+        self.subsampling: str | None = subsampling
+        self.xyb: bool = xyb
+        self.adaptive_quantization: bool = adaptive_quantization
+        self.std_quant: bool = std_quant
+        self.fixed_code: bool = fixed_code
+
+    @classmethod
+    def parse_options(cls, options: str) -> Self:  # noqa: C901, PLR0912
+        """Parse JPEG format options.
+
+        Available options are: "optimize", "progressive", "keep_rgb" and
+        "subsamping"
+
+        Raises:
+            ValueError: If there are invalid options or invalid values.
+        """
+        progressive: int = 2
+        subsampling: str | None = None
+        xyb: bool = False
+        adaptive_quantization: bool = True
+        std_quant: bool = False
+        fixed_code: bool = False
+        name: str
+        value: str
+        for name, value in cls._parse_opt(options):
+            match name:
+                case "progressive":
+                    try:
+                        prog: int | bool = parse_str_int(value, range(3), name)
+                    except ValueError:
+                        try:
+                            prog = parse_str_bool(value, name)
+                        except ValueError:
+                            msg: str = (
+                                'progressive value must be "true", "false", '
+                                '"0", "1" or "2"'
+                            )
+                            raise ValueError(msg) from None
+
+                    if prog is True:
+                        progressive = 2
+                    elif prog is False:
+                        progressive = 0
+                    else:
+                        progressive = prog
+
+                case "subsampling":
+                    if value not in ("4:4:4", "4:4:0", "4:2:2", "4:2:0"):
+                        msg = (
+                            'subsampling value must be "4:4:4", "4:4:0", "4:2:2" '
+                            'and "4:2:0"'
+                        )
+                        raise ValueError(msg)
+                    subsampling = value.replace(":", "")
+
+                case "xyb":
+                    xyb = parse_str_bool(value, name)
+                case "adaptive-quantization":
+                    adaptive_quantization = parse_str_bool(value, name)
+                case "std-quant":
+                    std_quant = parse_str_bool(value, name)
+                case "fixed-code":
+                    fixed_code = parse_str_bool(value, name)
+
+        if fixed_code and progressive != 0:
+            msg = "progressive must be 0 if fixed-code is true"
+            raise ValueError(msg)
+
+        return cls(
+            progressive=progressive,
+            subsampling=subsampling,
+            xyb=xyb,
+            adaptive_quantization=adaptive_quantization,
+            std_quant=std_quant,
+            fixed_code=fixed_code,
+        )
+
+    def _get_params(self) -> list[str]:
+        params: list[str] = [
+            "cjpegli",
+            "--quiet",
+            f"--quality={self.quality}",
+            f"--progressive_level={self.progressive}",
+        ]
+        if self.subsampling:
+            params.append(f"--chroma_subsampling={self.subsampling}")
+        if self.xyb:
+            params.append("--xyb")
+        if not self.adaptive_quantization:
+            params.append("--noadaptive-quantization")
+        if self.fixed_code:
+            params.append("--fixed_code")
+        if self.std_quant:
+            params.append("--std_quant")
+        params.extend(("-", "-"))
+        return params
+
+    def convert(self, in_buffer: BytesIO) -> bytes:
+        """Convert an image into JPEG using jpegli encoder and return it."""
+
+        @contextlib.contextmanager
+        def view_manager(buffer: BytesIO) -> Generator[memoryview, None, None]:
+            view: memoryview | None = None
+            try:
+                view = buffer.getbuffer()
+                yield view
+            finally:
+                if view is not None:
+                    view.release()
+
+        def run(img: Image.Image, info: dict[str, Any]) -> bytes:
+            buffer: BytesIO
+            with BytesIO() as buffer:
+                with img:
+                    img.save(
+                        buffer,
+                        format="PNG",
+                        compress_level=0,
+                        icc_profile=info.get("icc_profile"),
+                        exif=info.get("exif"),
+                        dpi=info.get("dpi"),
+                    )
+
+                view: memoryview
+                with view_manager(buffer) as view:
+                    return subprocess.run(  # noqa: S603
+                        self._get_params(), input=view, capture_output=True, check=True
+                    ).stdout
+
+        img: Image.Image
+        with Image.open(in_buffer) as img:
+            if img.format == "PNG" and img.mode == "1":
+                limg: Image.Image = img.convert("L")
+                img.close()
+                return run(limg, img.info)
+
+            if (
+                img.format == "PNG"
+                and img.has_transparency_data
+                or img.format not in ("JPEG", "PNG", "APNG", "GIF", "PPM", "PFM")
+            ):
+                return run(remove_alpha(img), img.info)
+
+        in_view: memoryview
+        with view_manager(in_buffer) as in_view:
+            return subprocess.run(  # noqa: S603
+                self._get_params(), input=in_view, capture_output=True, check=True
+            ).stdout
 
 
 class JpegXLConverter(BaseConverter):
@@ -226,6 +493,7 @@ class JpegXLConverter(BaseConverter):
     format = ImageFormat.JPEGXL
     pil_format = "JXL"
     extension = ".jxl"
+    options = {"effort", "decoding-speed"}
     quality: int
     effort: int
     decoding_speed: int
@@ -245,7 +513,7 @@ class JpegXLConverter(BaseConverter):
                 compression. It must be an int between 1 and 100.
             decoding_speed: Improves image decoding speed at the expense
                 of quality or density. It must be an int between 0 and
-                .4.
+                4.
 
         Raises:
             ValueError: If any of the args is invalid.
@@ -273,35 +541,19 @@ class JpegXLConverter(BaseConverter):
         """
         effort: int = DEFAULT_EFFORT
         decoding_speed: int = DEFAULT_DECODING_SPEED
-        opt: str
-        for opt in options.split(","):
-            if not opt:
-                continue
-
-            name: str
-            value: str
-            name, _, value = opt.partition("=")
-
-            msg: str
-            if not value:
-                msg = f"{name} option value is empty"
-                raise ValueError(msg)
-
-            lname: str = name.lower()
-
-            if lname == "effort":
+        name: str
+        value: str
+        for name, value in cls._parse_opt(options):
+            if name == "effort":
                 effort = parse_str_int(value, EFFORT_RANGE, "effort")
-            elif lname == "decoding-speed":
+            elif name == "decoding-speed":
                 decoding_speed = parse_str_int(
                     value, DECODING_SPEED_RANGE, "decoding-speed"
                 )
-            else:
-                msg = f"{name} is not a valid option for jpegxl"
-                raise ValueError(msg)
 
         return cls(effort=effort, decoding_speed=decoding_speed)
 
-    def convert(self, in_buffer: BinaryIO) -> ImageData | bytes:
+    def convert(self, in_buffer: BytesIO) -> ImageData | bytes:
         """Convert an image into JPEG XL and return it.
 
         Args:
@@ -382,6 +634,15 @@ class JpegXLConverter(BaseConverter):
 
         return ImageData(img, img.info, new=False)
 
+    def get_metadata(self, meta: dict[str, Any]) -> dict[str, Any]:
+        """Returns metadata that must be saved to the JPEG XL file."""
+        metadata: dict[str, Any] = {
+            i: meta[i] for i in {"exif", "jumb", "xmp", "icc_profile"} & meta.keys()
+        }
+        metadata["effort"] = self.effort
+        metadata["decoding_speed"] = self.decoding_speed
+        return metadata
+
 
 class PngConverter(BaseConverter):
     """Converter to PNG images."""
@@ -389,21 +650,44 @@ class PngConverter(BaseConverter):
     format = ImageFormat.PNG
     pil_format = "PNG"
     extension = ".png"
+    options = {"optimize"}
     quality: int = PNG_DEFAULT
+    optimize: bool
 
-    def __init__(self, quality: int = PNG_DEFAULT):
+    def __init__(self, quality: int = PNG_DEFAULT, *, optimize: bool = False):
         """Initializes the object.
 
         Args:
             quality: Quality of the compressed image. It must be an int
                 between 0 and 9.
+            optimize: Tells the encoded to search the best encoding
+                options, but it will take a lot of time. Ignores quality
+                and always uses `quality=9`.
 
         Raises:
             ValueError: If any of the args is invalid.
         """
         self.quality = quality
+        self.optimize = optimize
 
-    def convert(self, in_buffer: BinaryIO) -> ImageData:
+    @classmethod
+    def parse_options(cls, options: str) -> Self:
+        """Parse PNG format options.
+
+        The only option available is "optimize".
+
+        Raises:
+            ValueError: If there are invalid options or invalid values.
+        """
+        optimize = False
+        name: str
+        value: str
+        for name, value in cls._parse_opt(options):
+            if name == "optimize":
+                optimize = parse_str_bool(value, name)
+        return cls(optimize=optimize)
+
+    def convert(self, in_buffer: BytesIO) -> ImageData:
         """Convert an image into PNG and return it.
 
         Args:
@@ -439,7 +723,11 @@ class PngConverter(BaseConverter):
 
     def get_metadata(self, meta: dict[str, Any]) -> dict[str, Any]:
         """Returns metadata that must be saved to the PNG file."""
-        return {i: meta[i] for i in {"dpi", "icc_profile"} & meta.keys()}
+        metadata: dict[str, Any] = {
+            i: meta[i] for i in {"dpi", "icc_profile"} & meta.keys()
+        }
+        metadata["optimize"] = self.optimize
+        return metadata
 
 
 @dataclass
@@ -457,6 +745,20 @@ class Parameters:
     converter: BaseConverter | None
     input: Path
     output: Path
+
+
+def remove_alpha(img: Image.Image) -> Image.Image:
+    """Removes img alpha channel replacing it with a white background."""
+    output_mode = "L" if img.mode in ("LA", "La") else "RGB"
+    with Image.new("RGBA", img.size, "WHITE") as background:
+        if img.mode != "RGBA":
+            with img:
+                img = img.convert("RGBA")
+
+        with img:
+            background.alpha_composite(img)
+            converted: Image.Image = background.convert(output_mode)
+            return converted
 
 
 def parse_str_bool(value: str, name: str) -> bool:
@@ -574,7 +876,7 @@ def parse_params(argv: Sequence[str] | None = None) -> Parameters:
 
         case ImageFormat.NO_CHANGE:
             return Parameters(converter=None, input=params.input, output=output)
-        case _:
+        case _:  # pragma: no cover
             assert_never(params.format)
 
     if params.quality is not None and params.format in (
@@ -670,9 +972,7 @@ class EntryStorer:
 
         Args:
             entry: Entry from the input comic book archive.
-            archive: Output .cbz file.
-            converter: If is not None then it'll try to convert the
-                entry into another image format.
+            name: Path to the file in the archive that will saved.
 
         Returns:
             Path to where the entry was saved in the .cbz file.
@@ -708,6 +1008,15 @@ class EntryStorer:
                 simple_save(in_buffer)
                 return
 
+            except subprocess.CalledProcessError as err:
+                errormsg(
+                    (
+                        f'An error happened while encoding "{entry.pathname}": '
+                        f"{err.stderr.decode()}"
+                    ),
+                    1,
+                )
+
             if isinstance(img_data, bytes):
                 entry_attrs: dict[str, Any] = get_entry_attrs(entry)
                 entry_attrs["mtime"] = datetime.datetime.now().astimezone().timestamp()
@@ -732,8 +1041,11 @@ class EntryStorer:
 
 
 def create_new_name(old_name: str, converter: BaseConverter | None) -> str:
-    return old_name if converter is None else str(
-        PurePath(old_name).with_suffix(converter.extension)
+    """Returns a new name where a file must be saved in the CBZ file."""
+    return (
+        old_name
+        if converter is None
+        else str(PurePath(old_name).with_suffix(converter.extension))
     )
 
 
