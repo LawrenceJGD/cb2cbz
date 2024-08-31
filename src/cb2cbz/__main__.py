@@ -8,10 +8,14 @@ import abc
 import argparse
 import contextlib
 import datetime
+import re
+import shutil
 import subprocess
 import sys
+import textwrap
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import partial
 from io import BytesIO
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Self, assert_never
@@ -804,10 +808,42 @@ def parse_str_int(value: str, limits: range, name: str) -> int:
     return num
 
 
+def wrap_bulleted_text(text: str, width: int) -> str:
+    """Devuelve el texto ajustado al tamaño en width.
+
+    Si las líneas tienen espacios iniciales entonces el texto en los
+    párrafos también será indentado, y si el texto está en viñetas
+    (deben ser hechas con "*" y "-") también es indentado para ajustarlo
+    a estas.
+
+    Args:
+        text: string a ajustar.
+        width: tamaño máximo que debe tener cada línea.
+    """
+    indent_pattern: Final[re.Pattern[str]] = re.compile(r"^ *(?:[*+-] +)?")
+    new_lines: list[str] = []
+
+    for line in text.split("\n"):
+        if line.isspace():
+            new_lines.append(line)
+        elif not line:
+            new_lines.extend(textwrap.wrap(line, width))
+        else:
+            indent_match: re.Match[str] | None = indent_pattern.search(line)
+            indent: str = " " * indent_match.end() if indent_match else ""
+            new_lines.extend(textwrap.wrap(line, width, subsequent_indent=indent))
+
+    return "\n".join(new_lines)
+
+
 def parse_params(argv: Sequence[str] | None = None) -> Parameters:
     """Parse CLI parameters and return them."""
+    terminal_width: int = shutil.get_terminal_size().columns - 26
+    wrap = partial(wrap_bulleted_text, width=terminal_width)
+
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        description="Converts comic book archives into .cbz files"
+        description="Converts comic book archives into .cbz files",
+        formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
         "-f",
@@ -815,23 +851,22 @@ def parse_params(argv: Sequence[str] | None = None) -> Parameters:
         choices=ImageFormat,
         type=ImageFormat,
         default=ImageFormat.NO_CHANGE,
-        help=(
+        help=wrap(
             "Image format to which the images in the comic book will be "
-            'converted. "jxl" uses lossless compression while '
-            '"jxl-lossy" does not, "jpegli" encodes JPEG files using '
-            'cjpegli and "no-change" does not change the image\'s format.'
+            'converted. "jxl" uses lossless compression while "jxl-lossy" does '
+            'not, "jpegli" encodes JPEG files using cjpegli and "no-change" '
+            'does not change the image\'s format.'
         ),
     )
     parser.add_argument(
         "-q",
         "--quality",
         type=int,
-        help=(
+        help=wrap(
             "Compression quality. Its meaning depends on the format. For "
             '"jpeg", "jpegli" and "jpegxl" it goes from 0 to 100, the default '
             'for them is 90. For "jpegxl" 100 means lossless. For "png" it '
-            'goes from 0 to 9 and the default is 6. For "no-change" is '
-            "ignored."
+            'goes from 0 to 9 and the default is 6. For "no-change" is ignored.'
         ),
     )
     parser.add_argument(
@@ -839,7 +874,49 @@ def parse_params(argv: Sequence[str] | None = None) -> Parameters:
         "--options",
         default="",
         metavar="FORMAT-OPTIONS",
-        help="Selected format options. TBD",
+        help=wrap(
+            "Options that will modify compression of each format. The options "
+            "and values depend on the selected format. Commas can be used for "
+            'separating options like this: "option1=value1,option2=value2". '
+            'The available options are:\n '
+            "\n"
+            '* jpeg:\n'
+            '  - optimize: If "true" then does an extra step for optimizing '
+            'JPEG encoding. "false" by default\n'
+            '  - progressive: If "true" uses progressive encoding. "false" by '
+            'default.\n'
+            '  - keep_rgb: If "true" uses RGB instead of YCbCr. "false" by default.\n'
+            '  - subsampling: Chroma subsampling setting. Valid values are '
+            '"4:4:4", "4:2:2", and "4:2:0". If is not specified the encoder '
+            'will decide it.\n'
+            '* jpegli:\n'
+            '  - progressive: Uses progressive encoding. Valid values are:\n'
+            '    + "0" or "false": Does not use progressive encoding.\n'
+            '    + "1": Does one step of progressive encoding.\n'
+            '    + "2" or "true": Does two steps of progressive encoding (default).\n'
+            '  - subsampling: Chroma subsampling setting. Valid values are '
+            '"4:4:4", "4:4:0", "4:2:2", and "4:2:0".\n'
+            '  - xyb: If "true" uses XYB colorspace. Improves compression but '
+            'it may be incompatible with several image viewers. "false" by '
+            'default.\n'
+            '  - adaptive_quantization: If "false" will not use adaptive '
+            'quantization. "true" by default.\n'
+            '  - std_quant: If "true" will use standard quantization tables. '
+            '"false" by default\n'
+            '  - fixed_code: If "true" will use fixed encoding. "false" by '
+            'default.\n'
+            '* jpegxl:\n'
+            '  - effort: A number from 1 to 10 that indicates how much '
+            'processing will be used for encoding, a bigger number improves '
+            'the compression ratio, but will increase CPU and RAM usage. "7" '
+            'by default\n'
+            '  - decoding-speed: A number from 0 to 4, higher values improve '
+            'decode speed at the expense of quality or density.\n'
+            '* png:\n'
+            '  - optimize: If "true" tells the encoder to search the best '
+            'encoding settings. Quality will be adjusted to "9" and it will '
+            'increase CPU usage a lot.\n'
+        )
     )
     parser.add_argument(
         "input",
@@ -935,9 +1012,13 @@ class EntryStorer:
         self, out_name: str, entry: ArchiveEntry, img: Image.Image, meta: dict[str, Any]
     ) -> None:
         if self.converter is None:
-            raise ValueError  # TODO @LawrenceJGD: Add an specific message.
+            msg: str = "converter was not specified"
+            raise ValueError(msg)
         if self.converter.pil_format is None:
-            raise ValueError
+            msg = (
+                f"{self.converter.format} cannot be used for converting through Pillow"
+            )
+            raise ValueError(msg)
 
         entry_attrs: dict[str, Any] = get_entry_attrs(entry)
         entry_attrs["mtime"] = datetime.datetime.now().astimezone().timestamp()
@@ -1073,7 +1154,11 @@ def main(argv: Sequence[str] | None = None) -> None:
                 stripped: str = entry.pathname.strip("/")
                 if stripped in names:
                     errormsg(
-                        f'At least two entries got the same name "{entry.pathname}"', 1
+                        (
+                            'Two files in the output CBZ file got the same '
+                            f'name due to the conversion: {entry.pathname}'
+                        ),
+                        1,
                     )
                 names.add(stripped)
                 output_arc.add_file_from_memory(
@@ -1089,7 +1174,13 @@ def main(argv: Sequence[str] | None = None) -> None:
                 new_name: str = create_new_name(entry.pathname, params.converter)
                 stripped = new_name.strip("/")
                 if stripped in names:
-                    errormsg(f'At least two entries got the same name "{new_name}"', 1)
+                    errormsg(
+                        (
+                            'Two files in the output CBZ file got the same '
+                            f'name due to the conversion: {entry.pathname}'
+                        ),
+                        1,
+                    )
                 names.add(stripped)
 
                 entry_storer.save_entry(entry, new_name)
