@@ -69,3 +69,6 @@ markers = [
 [tool.mypy]
 strict = true
 sqlite_cache = true
+
+[tool.coverage.run]
+dynamic_context = "test_function"

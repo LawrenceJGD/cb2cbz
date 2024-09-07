@@ -3,23 +3,40 @@
 # ruff: noqa: S101
 
 import sys
-from io import BytesIO
 from itertools import chain, product
 from pathlib import Path, PurePath
 from types import NoneType
 
 import pytest
-from cb2cbz import __main__
+from cb2cbz import __main__, converters
 from libarchive import file_reader, file_writer
-from PIL import Image
 
 EXTENSIONS = ("cbt", "cb7", "cbr", "cbz")
 CONVERTERS = (
-    __main__.JpegConverter,
-    __main__.JpegliConverter,
-    __main__.JpegXLConverter,
-    __main__.PngConverter,
+    converters.JpegConverter,
+    converters.JpegliConverter,
+    converters.JpegXLConverter,
+    converters.PngConverter,
 )
+
+
+@pytest.mark.parametrize(
+    "converter",
+    [
+        converters.JpegConverter,
+        converters.JpegliConverter,
+        converters.JpegXLConverter,
+        converters.PngConverter,
+    ],
+)
+def test_parameter_init(converter):
+    """Test Parameter.__init__."""
+    params = __main__.Parameters(
+        converter=converter, input=Path("test.cbr"), output=Path("tested.cbz")
+    )
+    assert params.converter == converter
+    assert params.input == Path("test.cbr")
+    assert params.output == Path("tested.cbz")
 
 
 class TestErrormsg:
@@ -53,250 +70,15 @@ class TestErrormsg:
                 __main__.errormsg("test", i)
 
 
-class TestJpegXLConverter:
-    """Test JpegXLConverter methods."""
-
-    def test_jpegxlconverter_init(self):
-        """Test __init__ method."""
-        test_quality = 12
-        test_effort = 3
-        test_decoding_speed = 4
-
-        converter = __main__.JpegXLConverter(
-            quality=test_quality, effort=test_effort, decoding_speed=test_decoding_speed
-        )
-
-        assert isinstance(converter, __main__.JpegXLConverter)
-        assert converter.quality == test_quality
-        assert converter.effort == test_effort
-        assert converter.decoding_speed == test_decoding_speed
-
-    def test_jpegxlconverter_init_invalid_quality(self):
-        """Test JpegXLConverter.__init__ using invalid quality values."""
-        for i in (-1, 101):
-            with pytest.raises(
-                ValueError, match="quality must be an int between 0 and 100"
-            ):
-                __main__.JpegXLConverter(quality=i)
-
-    def test_jpegxlconverter_init_invalid_effort(self):
-        """Test JpegXLConverter.__init__ using invalid effort values."""
-        for i in (0, 11):
-            with pytest.raises(
-                ValueError, match="effort must be an int between 1 and 10"
-            ):
-                __main__.JpegXLConverter(effort=i)
-
-    def test_jpegxlconverter_init_invalid_decoding_speed(self):
-        """Test JpegXLConverter.__init__ using an invalid decoding_speed."""
-        for i in (-1, 5):
-            with pytest.raises(
-                ValueError, match="decoding_speed must be an int between 0 and 4"
-            ):
-                __main__.JpegXLConverter(decoding_speed=i)
-
-    def test_jpegxlconverter_parse_options_effort(self):
-        """Test valid values for effort option."""
-        for num in __main__.EFFORT_RANGE:
-            converter = __main__.JpegXLConverter.parse_options(f"effort={num}")
-            assert isinstance(converter, __main__.JpegXLConverter)
-            assert converter.effort == num
-
-    def test_jpegxlconverter_parse_options_invalid_effort(self):
-        """Test invalid values for effort option."""
-        for num in chain(range(-10, 1), range(11, 21)):
-            with pytest.raises(ValueError):
-                __main__.JpegXLConverter.parse_options(f"effort={num}")
-
-    def test_jpegxlconverter_parse_options_decoding_speed(self):
-        """Test valid values for decoding_speed option."""
-        for num in __main__.DECODING_SPEED_RANGE:
-            converter = __main__.JpegXLConverter.parse_options(f"decoding-speed={num}")
-            assert isinstance(converter, __main__.JpegXLConverter)
-            assert converter.decoding_speed == num
-
-    def test_jpegxlconverter_parse_options_invalid_decoding_speed(self):
-        """Test invalid values for decoding_speed option."""
-        for num in chain(range(-10, 0), range(10, 20)):
-            with pytest.raises(ValueError):
-                __main__.JpegXLConverter.parse_options(f"decoding-speed={num}")
-
-    def test_jpegxlconverter_invalid_parse_options(self):
-        """Test parse_options methods using invalid options."""
-        with pytest.raises(ValueError, match="test option value is empty"):
-            __main__.JpegXLConverter.parse_options("test")
-
-    def test_jpegxlconverter_parse_options_invalid_name(self):
-        """Test parse_options methods using invalid options."""
-        with pytest.raises(ValueError, match="test is not a valid option for jpegxl"):
-            __main__.JpegXLConverter.parse_options("test=abc")
-
-    def test_jpegxlconverter_convert_png_l(self, shared_datadir):
-        """Test convert function using a PNG image in mode L."""
-        converter = __main__.JpegXLConverter()
-        with (shared_datadir / "2953_alien_theories.png").open(mode="rb") as img_file:
-            result = converter.convert(img_file)
-            assert isinstance(result, __main__.ImageData)
-            assert isinstance(result.img, Image.Image)
-            assert result.img.mode == "L"
-            assert not result.new
-
-    def test_jpegxlconverter_convert_png_1bit(self, shared_datadir):
-        """Test convert function using a PNG image in mode 1."""
-        converter = __main__.JpegXLConverter()
-        with (shared_datadir / "2952_routine_maintenance_1bit.png").open(
-            mode="rb"
-        ) as img_file:
-            result = converter.convert(img_file)
-            assert isinstance(result, __main__.ImageData)
-            assert isinstance(result.img, Image.Image)
-            assert result.img.mode == "L"
-            assert result.new
-
-    def test_jpegxlconverter_convert_png_l_alpha(self, shared_datadir):
-        """Test convert function using a PNG image in mode LA."""
-        converter = __main__.JpegXLConverter()
-        with (shared_datadir / "2955_pole_vault_L_alpha.png").open(
-            mode="rb"
-        ) as img_file:
-            result = converter.convert(img_file)
-            print(result.img.mode)
-            assert isinstance(result, __main__.ImageData)
-            assert isinstance(result.img, Image.Image)
-            assert result.img.mode == "LA"
-            assert not result.new
-
-    def test_jpegxlconverter_convert_png_rgba(self, shared_datadir):
-        """Test convert function using a PNG image in mode RGBA."""
-        converter = __main__.JpegXLConverter()
-        with (shared_datadir / "2955_pole_vault_rgba.png").open(mode="rb") as img_file:
-            result = converter.convert(img_file)
-            print(result.img.mode)
-            assert isinstance(result, __main__.ImageData)
-            assert isinstance(result.img, Image.Image)
-            assert result.img.mode == "RGBA"
-            assert not result.new
-
-    def test_jpegxlconverter_convert_png_p(self, shared_datadir):
-        """Test convert function using a PNG image in mode P."""
-        converter = __main__.JpegXLConverter()
-        with (shared_datadir / "2955_pole_vault_p.png").open(mode="rb") as img_file:
-            result = converter.convert(img_file)
-            assert isinstance(result, __main__.ImageData)
-            assert isinstance(result.img, Image.Image)
-            assert result.img.mode == "RGB"
-            assert result.new
-
-    def test_jpegxlconverter_convert_png_p_alpha(self, shared_datadir):
-        """Test convert function using a PNG image in mode P with alpha."""
-        converter = __main__.JpegXLConverter()
-        with (shared_datadir / "2955_pole_vault_p_alpha.png").open(
-            mode="rb"
-        ) as img_file:
-            result = converter.convert(img_file)
-            assert isinstance(result, __main__.ImageData)
-            assert isinstance(result.img, Image.Image)
-            assert result.img.mode == "RGBA"
-            assert result.new
-
-    def test_jpegxlconverter_convert_jpeg_file(self, shared_datadir):
-        """Test convert function using a JPEG."""
-        converter = __main__.JpegXLConverter()
-        with (shared_datadir / "2953_alien_theories_2.jpg").open(mode="rb") as img_file:
-            result = converter.convert(img_file)
-            assert isinstance(result, bytes)
-
-    def test_jpegxlconverter_convert_jpeg_bytesio(self, shared_datadir):
-        """Test convert function using a JPEG from a BytesIO object."""
-        converter = __main__.JpegXLConverter()
-        with (shared_datadir / "2953_alien_theories_2.jpg").open(mode="rb") as img_file:
-            data = BytesIO(img_file.read())
-
-        with data:
-            result = converter.convert(data)
-            assert isinstance(result, bytes)
-
-
-@pytest.mark.parametrize(
-    "converter",
-    [
-        __main__.JpegConverter,
-        __main__.JpegliConverter,
-        __main__.JpegXLConverter,
-        __main__.PngConverter,
-    ],
-)
-def test_parameter_init(converter):
-    """Test Parameter.__init__."""
-    params = __main__.Parameters(
-        converter=converter, input=Path("test.cbr"), output=Path("tested.cbz")
-    )
-    assert params.converter == converter
-    assert params.input == Path("test.cbr")
-    assert params.output == Path("tested.cbz")
-
-
-class TestParseStrBool:
-    """Test parse_str_bool function."""
-
-    @pytest.mark.parametrize("value", ("1", "true", "TRUE", "tRuE"))
-    def test_parse_str_true(self, value):
-        """Test true values."""
-        assert __main__.parse_str_bool(value, "test")
-
-    @pytest.mark.parametrize("value", ("0", "false", "FALSE", "fAlSe"))
-    def test_parse_str_false(self, value):
-        """Test false values."""
-        assert not __main__.parse_str_bool(value, "test")
-
-    def test_parse_str_invalid(self):
-        """Test invalid values."""
-        with pytest.raises(
-            ValueError, match='test value must be "1", "0", "true" or "false"'
-        ):
-            __main__.parse_str_bool("testing", "test")
-
-
-class TestParseStrInt:
-    """Tests for parse_str_int."""
-
-    def test_valid_parse_str_int(self):
-        """Test valid values for parse_str_int."""
-        test_range = range(-5, 6)
-        for i in test_range:
-            assert __main__.parse_str_int(str(i), test_range, "test") == i
-
-    def test_invalid_parse_str_int(self):
-        """Test invalid values for parse_str_int."""
-        test_range = range(30)
-        for i in ("a", "bC", "0x15", "0o15"):
-            with pytest.raises(ValueError):
-                __main__.parse_str_int(i, test_range, "test")
-
-    def test_parse_str_int_not_in_limits(self):
-        """Test numbers that are out of limits."""
-        out_of_limits = chain(range(-5, 0), range(6, 11))
-        test_range = range(6)
-        for i in out_of_limits:
-            with pytest.raises(
-                ValueError,
-                match=(
-                    "test value must be an integer between "
-                    f"{test_range.start} and {test_range.stop - 1}"
-                ),
-            ):
-                __main__.parse_str_int(i, test_range, "test")
-
-
 class TestParseParams:
     """Test parse_params function."""
 
     format_converters = [
-        (__main__.ImageFormat.JPEG, __main__.JpegConverter),
-        (__main__.ImageFormat.JPEGLI, __main__.JpegliConverter),
-        (__main__.ImageFormat.JPEGXL, __main__.JpegXLConverter),
-        (__main__.ImageFormat.PNG, __main__.PngConverter),
-        (__main__.ImageFormat.NO_CHANGE, NoneType),
+        (converters.ImageFormat.JPEG, converters.JpegConverter),
+        (converters.ImageFormat.JPEGLI, converters.JpegliConverter),
+        (converters.ImageFormat.JPEGXL, converters.JpegXLConverter),
+        (converters.ImageFormat.PNG, converters.PngConverter),
+        (converters.ImageFormat.NO_CHANGE, NoneType),
     ]
 
     def test_input_only(self):
@@ -401,6 +183,7 @@ class TestEntryStorer:
     @pytest.mark.slow
     @pytest.mark.parametrize("conv,ext", ext_and_converters)
     def test_entrystorer_init(self, tmp_path, conv, ext):
+        """Test EntryStorer.__init__ with multiple formats."""
         out_path = tmp_path / f"test_{ext}.cbz"
         converter = None if conv is None else conv()
 
@@ -413,8 +196,9 @@ class TestEntryStorer:
 
     @pytest.mark.slow
     @pytest.mark.parametrize("conv,ext", ext_and_converters)
-    def test_entrystorer_save_entry(self, shared_datadir, tmp_path, conv, ext):
-        in_path = shared_datadir / f"xkcd.{ext}"
+    def test_entrystorer_save_entry(self, test_data, tmp_path, conv, ext):
+        """Test EntryStorar.save_entry with multiple formats."""
+        in_path = test_data / f"xkcd.{ext}"
         out_path = tmp_path / f"test_{ext}.cbz"
         converter = None if conv is None else conv()
         files = set()
@@ -456,42 +240,42 @@ class TestMain:
     """Tests for main() function."""
 
     @pytest.mark.parametrize("ext", EXTENSIONS)
-    def test_cb_to_cbz_default(self, shared_datadir, tmp_path, ext):
+    def test_cb_to_cbz_default(self, test_data, tmp_path, ext):
         """Test conversion from comic book to .cbz."""
-        in_path = shared_datadir / f"xkcd.{ext}"
+        in_path = test_data / f"xkcd.{ext}"
         out_path = str(tmp_path / f"test_{ext}.cbz")
         __main__.main((str(in_path), out_path))
         assert in_path.exists()
 
     @pytest.mark.parametrize("ext", EXTENSIONS)
-    def test_cb_to_cbz_no_change(self, shared_datadir, tmp_path, ext):
+    def test_cb_to_cbz_no_change(self, test_data, tmp_path, ext):
         """Test conversion from comic book to .cbz using no-change."""
-        in_path = shared_datadir / f"xkcd.{ext}"
+        in_path = test_data / f"xkcd.{ext}"
         out_path = str(tmp_path / f"test_{ext}.cbz")
         __main__.main(("--format", "no-change", str(in_path), out_path))
         assert in_path.exists()
 
     @pytest.mark.slow
     @pytest.mark.parametrize("ext", EXTENSIONS)
-    def test_cb_to_cbz_jpegxl(self, shared_datadir, tmp_path, ext):
+    def test_cb_to_cbz_jpegxl(self, test_data, tmp_path, ext):
         """Test conversion from comic book to .cbz using jpegxl."""
-        in_path = shared_datadir / f"xkcd.{ext}"
+        in_path = test_data / f"xkcd.{ext}"
         out_path = str(tmp_path / f"test_{ext}.cbz")
         __main__.main(("--format", "jpegxl", str(in_path), out_path))
         assert in_path.exists()
 
-    def test_duplicated_files(self, shared_datadir, tmp_path):
+    def test_duplicated_files(self, test_data, tmp_path):
         """Test if main() gives error when there is duplicated files."""
-        in_path = shared_datadir / "duplicated_files.cbz"
+        in_path = test_data / "duplicated_files.cbz"
         out_path = tmp_path / "test_duplicated.cbz"
         with pytest.raises(SystemExit) as exc_info:
             __main__.main(("--format", "jpeg", str(in_path), str(out_path)))
 
         assert exc_info.value.code == 1
 
-    def test_duplicated_dir(self, shared_datadir, tmp_path):
+    def test_duplicated_dir(self, test_data, tmp_path):
         """Test if main() gives error when there is duplicated folders."""
-        in_path = shared_datadir / "duplicated_dir.cbz"
+        in_path = test_data / "duplicated_dir.cbz"
         out_path = tmp_path / "test_duplicated.cbz"
         with pytest.raises(SystemExit) as exc_info:
             __main__.main(("--format", "jpeg", str(in_path), str(out_path)))
