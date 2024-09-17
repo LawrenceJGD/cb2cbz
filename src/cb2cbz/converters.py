@@ -6,7 +6,7 @@ import abc
 import subprocess
 from contextlib import contextmanager
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Self
 
@@ -16,19 +16,10 @@ from PIL import Image
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Generator
 
-JPEG_RANGE: Final[range] = range(101)
-PNG_RANGE: Final[range] = range(10)
-JPEG_DEFAULT: Final[int] = 90
-PNG_DEFAULT: Final[int] = 6
-
-DEFAULT_JPEGLI_PROGRESSIVE: Final[int] = 2
-JPEGLI_PROGRESSIVE_RANGE: Final[range] = range(3)
-
-DEFAULT_EFFORT: Final[int] = 7
-DEFAULT_DECODING_SPEED: Final[int] = 0
-
-EFFORT_RANGE: Final[range] = range(1, 11)
-DECODING_SPEED_RANGE: Final[range] = range(5)
+JPEG_RANGE: Final = range(101)
+PNG_RANGE: Final = range(10)
+JPEG_DEFAULT: Final = 90
+PNG_DEFAULT: Final = 6
 
 
 class ImageFormat(StrEnum):
@@ -70,40 +61,17 @@ def parse_str_bool(value: str, name: str) -> bool:
         ValueError: If the value is not "1", "0", "true" or "false".
     """
     value = value.lower()
-    if value in ("true", "1"):
+    if value in {"true", "1"}:
         return True
-    if value in ("false", "0"):
+    if value in {"false", "0"}:
         return False
     msg: str = f'{name} value must be "1", "0", "true" or "false"'
     raise ValueError(msg)
 
 
-def parse_str_int(value: str, limits: range, name: str) -> int:
-    """Parse integer options, check and return them.
-
-    Args:
-        value: Value that must be parsed.
-        limits: Lower and upper limits for the value.
-        name: Name of the option to put in the exception if the value is
-            invalid.
-
-    Raises:
-        ValueError: If the value is not an integer or is not in the
-            limits.
-    """
-    num: int = int(value)
-    if num not in limits:
-        msg: str = (
-            f"{name} value must be an integer between {limits.start} and "
-            f"{limits.stop - 1}"
-        )
-        raise ValueError(msg)
-    return num
-
-
 def remove_alpha(img: Image.Image) -> Image.Image:
     """Removes img alpha channel replacing it with a white background."""
-    output_mode = "L" if img.mode in ("LA", "La") else "RGB"
+    output_mode = "L" if img.mode in {"LA", "La"} else "RGB"
     with Image.new("RGBA", img.size, "WHITE") as background:
         if img.mode != "RGBA":
             with img:
@@ -183,6 +151,15 @@ class BaseConverter(metaclass=abc.ABCMeta):
         """
 
 
+class JpegSubsamplingEnum(StrEnum):
+    """Enumeration for JpegConverter subsampling option."""
+
+    KEEP = "keep"
+    S444 = "4:4:4"
+    S422 = "4:2:2"
+    S420 = "4:2:0"
+
+
 class JpegConverter(BaseConverter):
     """Converter to JPEG images."""
 
@@ -190,13 +167,15 @@ class JpegConverter(BaseConverter):
     pil_format = "JPEG"
     extension = ".jpg"
     options = {"optimize", "progressive", "keep_rgb", "subsampling"}
-    progressive: bool
     quality: int
+    subsampling: JpegSubsamplingEnum | None
+    optimize: bool
+    progressive: bool
 
     def __init__(
         self,
         quality: int = JPEG_DEFAULT,
-        subsampling: str | None = None,
+        subsampling: JpegSubsamplingEnum | None = None,
         *,
         optimize: bool = False,
         keep_rgb: bool = False,
@@ -224,9 +203,6 @@ class JpegConverter(BaseConverter):
                 f"{JPEG_RANGE.stop - 1}"
             )
             raise ValueError(msg)
-        if subsampling not in ("keep", "4:4:4", "4:2:2", "4:2:0", None):
-            msg = 'subsampling must be "keep", "4:4:4", "4:2:2", "4:2:0" or None'
-            raise ValueError(msg)
 
         self.quality = quality
         self.optimize = optimize
@@ -247,21 +223,24 @@ class JpegConverter(BaseConverter):
         optimize: bool = False
         progressive: bool = True
         keep_rgb: bool = False
-        subsampling: str | None = None
+        subsampling: JpegSubsamplingEnum | None = None
         name: str
         value: str
         for name, value in cls._parse_opt(options):
-            if name == "optimize":
-                optimize = parse_str_bool(value, name)
-            elif name == "progressive":
-                progressive = parse_str_bool(value, name)
-            elif name == "keep_rgb":
-                keep_rgb = parse_str_bool(value, name)
-            elif name == "subsampling":
-                if value not in ("keep", "4:4:4", "4:2:2", "4:2:0"):
-                    msg: str = f'"{value}" is not a valid subsampling'
-                    raise ValueError(msg)
-                subsampling = value
+            match name:
+                case "optimize":
+                    optimize = parse_str_bool(value, name)
+                case "progressive":
+                    progressive = parse_str_bool(value, name)
+                case "keep_rgb":
+                    keep_rgb = parse_str_bool(value, name)
+                case "subsampling":
+                    try:
+                        subsampling = JpegSubsamplingEnum(value)
+                    except ValueError as err:
+                        msg: str = f'"{value}" is not a valid subsampling'
+                        raise ValueError(msg) from err
+
         return cls(
             optimize=optimize,
             progressive=progressive,
@@ -289,7 +268,7 @@ class JpegConverter(BaseConverter):
                 in_buffer is an image.
         """
         img: Image.Image = Image.open(in_buffer)
-        if img.mode in ("L", "RGB", "CMYK"):
+        if img.mode in {"L", "RGB", "CMYK"}:
             return ImageData(img, img.info, new=False)
 
         if img.mode == "1":
@@ -314,6 +293,23 @@ class JpegConverter(BaseConverter):
         return metadata
 
 
+class JpegliProgressiveEnum(IntEnum):
+    """Enumeration for JpegliConverter progressive option."""
+
+    ZERO = 0
+    ONE = 1
+    TWO = 2
+
+
+class JpegliSubsamplingEnum(StrEnum):
+    """Enumeration for JpegliConverter subsampling option."""
+
+    S444 = "444"
+    S440 = "440"
+    S422 = "422"
+    S420 = "420"
+
+
 class JpegliConverter(BaseConverter):
     """Converter to JPEG images using cjpegli encoder."""
 
@@ -329,8 +325,8 @@ class JpegliConverter(BaseConverter):
         "fixed_code",
     }
     quality: int
-    progressive: int
-    subsampling: str | None
+    progressive: JpegliProgressiveEnum
+    subsampling: JpegliSubsamplingEnum | None
     xyb: bool
     adaptive_quantization: bool
     std_quant: bool
@@ -339,8 +335,8 @@ class JpegliConverter(BaseConverter):
     def __init__(  # noqa: PLR0913
         self,
         quality: int = JPEG_DEFAULT,
-        progressive: int = DEFAULT_JPEGLI_PROGRESSIVE,
-        subsampling: str | None = None,
+        progressive: JpegliProgressiveEnum = JpegliProgressiveEnum.TWO,
+        subsampling: JpegliSubsamplingEnum | None = None,
         *,
         xyb: bool = False,
         adaptive_quantization: bool = True,
@@ -355,8 +351,8 @@ class JpegliConverter(BaseConverter):
                 means no progressive encoding. Must be a int between 0
                 and 2.
             subsampling: Chroma subsampling setting. Valid values are:
-                "444", "440", "422", "420" or None. If None the default
-                encoder setting will be used.
+                444, 440, 422, 420 or None. If None the default encoder
+                setting will be used.
             xyb: If True then will convert using XYB colorspace.
             adaptive_quantization: If True then will use adaptive
                 quantization.
@@ -372,30 +368,20 @@ class JpegliConverter(BaseConverter):
                 f"{JPEG_RANGE.stop - 1}"
             )
             raise ValueError(msg)
-        if progressive not in JPEGLI_PROGRESSIVE_RANGE:
-            msg = (
-                "progressive must be an int between "
-                f"{JPEGLI_PROGRESSIVE_RANGE.start} and "
-                f"{JPEGLI_PROGRESSIVE_RANGE.stop - 1}"
-            )
-            raise ValueError(msg)
-        if subsampling is not None and subsampling not in ("444", "440", "422", "420"):
-            msg = 'subsampling must be "444", "440", "422" or "420"'
-            raise ValueError(msg)
-        if fixed_code and progressive != 0:
+        if fixed_code and progressive != JpegliProgressiveEnum.ZERO:
             msg = "progressive must be 0 if fixed_code is True"
             raise ValueError(msg)
 
         self.quality = quality
-        self.progressive: int = progressive
-        self.subsampling: str | None = subsampling
-        self.xyb: bool = xyb
-        self.adaptive_quantization: bool = adaptive_quantization
-        self.std_quant: bool = std_quant
-        self.fixed_code: bool = fixed_code
+        self.progressive = progressive
+        self.subsampling = subsampling
+        self.xyb = xyb
+        self.adaptive_quantization = adaptive_quantization
+        self.std_quant = std_quant
+        self.fixed_code = fixed_code
 
     @classmethod
-    def parse_options(cls, options: str) -> Self:  # noqa: C901, PLR0912
+    def parse_options(cls, options: str) -> Self:  # noqa: C901
         """Parse jpegli format options.
 
         Available options are: "optimize", "progressive", "keep_rgb" and
@@ -404,8 +390,8 @@ class JpegliConverter(BaseConverter):
         Raises:
             ValueError: If there are invalid options or invalid values.
         """
-        progressive: int = 2
-        subsampling: str | None = None
+        progressive: JpegliProgressiveEnum = JpegliProgressiveEnum.TWO
+        subsampling: JpegliSubsamplingEnum | None = None
         xyb: bool = False
         adaptive_quantization: bool = True
         std_quant: bool = False
@@ -416,32 +402,28 @@ class JpegliConverter(BaseConverter):
             match name:
                 case "progressive":
                     try:
-                        prog: int | bool = parse_str_int(value, range(3), name)
-                    except ValueError:
+                        progressive = JpegliProgressiveEnum(int(value))
+                    except ValueError as err1:
                         try:
-                            prog = parse_str_bool(value, name)
-                        except ValueError:
+                            progressive = JpegliProgressiveEnum(
+                                2 if parse_str_bool(value, name) else 0
+                            )
+                        except ValueError as err2:
                             msg: str = (
                                 'progressive value must be "true", "false", '
                                 '"0", "1" or "2"'
                             )
-                            raise ValueError(msg) from None
-
-                    if prog is True:
-                        progressive = 2
-                    elif prog is False:
-                        progressive = 0
-                    else:
-                        progressive = prog
+                            err2.__cause__ = err1
+                            raise ValueError(msg) from err2
 
                 case "subsampling":
-                    if value not in ("4:4:4", "4:4:0", "4:2:2", "4:2:0"):
+                    if value not in {"4:4:4", "4:4:0", "4:2:2", "4:2:0"}:
                         msg = (
-                            'subsampling value must be "4:4:4", "4:4:0", "4:2:2" '
-                            'or "4:2:0"'
+                            'subsampling value must be "4:4:4", "4:4:0", '
+                            '"4:2:2" or "4:2:0"'
                         )
                         raise ValueError(msg)
-                    subsampling = value.replace(":", "")
+                    subsampling = JpegliSubsamplingEnum(value.replace(":", ""))
 
                 case "xyb":
                     xyb = parse_str_bool(value, name)
@@ -452,7 +434,7 @@ class JpegliConverter(BaseConverter):
                 case "fixed_code":
                     fixed_code = parse_str_bool(value, name)
 
-        if fixed_code and progressive != 0:
+        if fixed_code and progressive != JpegliProgressiveEnum.ZERO:
             msg = "progressive must be 0 if fixed_code is true"
             raise ValueError(msg)
 
@@ -504,7 +486,7 @@ class JpegliConverter(BaseConverter):
                 img.close()
                 img = new_img
 
-            elif img.mode not in ("RGB", "L", "P"):
+            elif img.mode not in {"RGB", "L", "P"}:
                 new_img = img.convert("RGB")
                 img.close()
                 img = new_img
@@ -537,8 +519,8 @@ class JpegliConverter(BaseConverter):
 
             if (
                 img.has_transparency_data
-                or img.format not in ("JPEG", "PNG", "PPM")
-                or img.mode not in ("RGB", "L", "P")
+                or img.format not in {"JPEG", "PNG", "PPM"}
+                or img.mode not in {"RGB", "L", "P"}
             ):
                 return run(img, img.info)
 
@@ -549,22 +531,47 @@ class JpegliConverter(BaseConverter):
             ).stdout
 
 
+class JpegXLEffortEnum(IntEnum):
+    """Enumeration for JpegXLConverter effort option."""
+
+    ONE = 1
+    TWO = 2
+    THREE = 3
+    FOUR = 4
+    FIVE = 5
+    SIX = 6
+    SEVEN = 7
+    EIGHT = 8
+    NINE = 9
+    TEN = 10
+
+
+class JpegXLDecodingSpeedEnum(IntEnum):
+    """Enumeration for JpegXLConverter decoding_speed option."""
+
+    ZERO = 0
+    ONE = 1
+    TWO = 2
+    THREE = 3
+    FOUR = 4
+
+
 class JpegXLConverter(BaseConverter):
     """Converter to JPEG XL images."""
 
     format = ImageFormat.JPEGXL
     pil_format = "JXL"
     extension = ".jxl"
-    options = {"effort", "decoding-speed"}
+    options = {"effort", "decoding_speed"}
     quality: int
-    effort: int
-    decoding_speed: int
+    effort: JpegXLEffortEnum
+    decoding_speed: JpegXLDecodingSpeedEnum
 
     def __init__(
         self,
         quality: int = JPEG_DEFAULT,
-        effort: int = DEFAULT_EFFORT,
-        decoding_speed: int = DEFAULT_DECODING_SPEED,
+        effort: JpegXLEffortEnum = JpegXLEffortEnum.SEVEN,
+        decoding_speed: JpegXLDecodingSpeedEnum = JpegXLDecodingSpeedEnum.ZERO,
     ):
         """Initializes the object.
 
@@ -572,7 +579,7 @@ class JpegXLConverter(BaseConverter):
             quality: Quality of the compressed image. It must be an int
                 between 0 and 100.
             effort: How much processing will be done to do the
-                compression. It must be an int between 1 and 100.
+                compression. It must be an int between 1 and 10.
             decoding_speed: Improves image decoding speed at the expense
                 of quality or density. It must be an int between 0 and
                 4.
@@ -582,12 +589,6 @@ class JpegXLConverter(BaseConverter):
         """
         if quality not in JPEG_RANGE:
             msg: str = "quality must be an int between 0 and 100"
-            raise ValueError(msg)
-        if effort not in EFFORT_RANGE:
-            msg = "effort must be an int between 1 and 10"
-            raise ValueError(msg)
-        if decoding_speed not in DECODING_SPEED_RANGE:
-            msg = "decoding_speed must be an int between 0 and 4"
             raise ValueError(msg)
 
         self.quality = quality
@@ -601,17 +602,24 @@ class JpegXLConverter(BaseConverter):
         Raises:
             ValueError: If there are invalid options or invalid values.
         """
-        effort: int = DEFAULT_EFFORT
-        decoding_speed: int = DEFAULT_DECODING_SPEED
+        effort: JpegXLEffortEnum = JpegXLEffortEnum.SEVEN
+        decoding_speed: JpegXLDecodingSpeedEnum = JpegXLDecodingSpeedEnum.ZERO
         name: str
         value: str
         for name, value in cls._parse_opt(options):
             if name == "effort":
-                effort = parse_str_int(value, EFFORT_RANGE, "effort")
-            elif name == "decoding-speed":
-                decoding_speed = parse_str_int(
-                    value, DECODING_SPEED_RANGE, "decoding-speed"
-                )
+                try:
+                    effort = JpegXLEffortEnum(int(value))
+                except ValueError as err:
+                    msg: str = "effort value must be an integer between 1 and 10"
+                    raise ValueError(msg) from err
+
+            elif name == "decoding_speed":
+                try:
+                    decoding_speed = JpegXLDecodingSpeedEnum(int(value))
+                except ValueError as err:
+                    msg = "decoding_speed value must be an integer between 0 and 4"
+                    raise ValueError(msg) from err
 
         return cls(effort=effort, decoding_speed=decoding_speed)
 
@@ -637,7 +645,7 @@ class JpegXLConverter(BaseConverter):
         enc: pillow_jxl.Encoder | None = None
         img: Image.Image = Image.open(in_buffer)
 
-        if img.format == "JPEG" and img.mode in ("RGB", "L"):
+        if img.format == "JPEG" and img.mode in {"RGB", "L"}:
             enc = pillow_jxl.Encoder(  # type: ignore[call-arg]
                 mode=img.mode,
                 parallel=True,
@@ -649,12 +657,7 @@ class JpegXLConverter(BaseConverter):
                 use_original_profile=True,
             )
 
-            buf_data: bytes
-            if isinstance(in_buffer, BytesIO):
-                buf_data = in_buffer.getvalue()
-            else:
-                in_buffer.seek(0)
-                buf_data = in_buffer.read()
+            buf_data: bytes = in_buffer.getvalue()
             in_buffer.close()
 
             exif: bytes | None = img.info.get("exif", img.getexif().tobytes())
@@ -681,13 +684,13 @@ class JpegXLConverter(BaseConverter):
             with img:
                 return ImageData(img.convert("L"), img.info, new=True)
 
-        if img.mode not in ("RGB", "L") and not img.has_transparency_data:
+        if img.mode not in {"RGB", "L"} and not img.has_transparency_data:
             with img:
                 return ImageData(
                     img.convert("L" if img.mode == "LA" else "RGB"), img.info, new=True
                 )
 
-        if img.mode not in ("RGB", "RGBA", "L", "LA"):
+        if img.mode not in {"RGB", "RGBA", "L", "LA"}:
             with img:
                 return ImageData(
                     img.convert("RGBA" if img.has_transparency_data else "RGB"),
@@ -761,16 +764,16 @@ class PngConverter(BaseConverter):
                 in_buffer is an image.
         """
         img: Image.Image = Image.open(in_buffer)
-        if img.mode in ("1", "L", "P"):
+        if img.mode in {"1", "L", "P"}:
             return ImageData(img, img.info, new=False)
 
         if img.getcolors():
             return ImageData(img.convert("P"), img.info, new=True)
 
-        if img.mode != "RGB" and not hasattr(img, "transparency"):
+        if img.mode != "RGB" and not img.has_transparency_data:
             return ImageData(img.convert("RGB"), img.info, new=True)
 
-        if img.mode in ("LA", "I", "RGB", "RGBA"):
+        if img.mode in {"LA", "I", "RGB", "RGBA"}:
             return ImageData(img, img.info, new=False)
 
         return ImageData(img.convert("RGBA"), img.info, new=True)
@@ -778,5 +781,7 @@ class PngConverter(BaseConverter):
     def get_metadata(self, meta: dict[str, Any]) -> dict[str, Any]:
         """Returns metadata that must be saved to the PNG file."""
         metadata: dict[str, Any] = {"optimize": self.optimize}
-        metadata.update(filter(lambda x: x[0] in {"dpi", "icc_profile"}, meta.items()))
+        metadata.update(
+            filter(lambda x: x[0] in {"dpi", "icc_profile", "exif"}, meta.items())
+        )
         return metadata

@@ -176,7 +176,7 @@ def parse_params(argv: Sequence[str] | None = None) -> Parameters:
             "processing will be used for encoding, a bigger number improves "
             'the compression ratio, but will increase CPU and RAM usage. "7" '
             "by default\n"
-            "  - decoding-speed: A number from 0 to 4, higher values improve "
+            "  - decoding_speed: A number from 0 to 4, higher values improve "
             "decode speed at the expense of quality or density.\n"
             "* png:\n"
             '  - optimize: If "true" tells the encoder to search the best '
