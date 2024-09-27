@@ -131,8 +131,9 @@ def parse_params(argv: Sequence[str] | None = None) -> Parameters:
         help=wrap(
             "Compression quality. Its meaning depends on the format. For "
             '"jpeg", "jpegli" and "jpegxl" it goes from 0 to 100, the default '
-            'for them is 90. For "jpegxl" 100 means lossless. For "png" it '
-            'goes from 0 to 9 and the default is 6. For "no-change" is ignored.'
+            'for them is 90. For "jpegxl" 100 means mathematically lossless '
+            'and 90 visually lossless. For "png" it goes from 0 to 9 and the '
+            'default is 6. For "no-change" is ignored.'
         ),
     )
     parser.add_argument(
@@ -172,7 +173,7 @@ def parse_params(argv: Sequence[str] | None = None) -> Parameters:
             '  - fixed_code: If "true" will use fixed encoding. "false" by '
             "default.\n"
             "* jpegxl:\n"
-            "  - effort: A number from 1 to 10 that indicates how much "
+            "  - effort: A number from 1 to 9 that indicates how much "
             "processing will be used for encoding, a bigger number improves "
             'the compression ratio, but will increase CPU and RAM usage. "7" '
             "by default\n"

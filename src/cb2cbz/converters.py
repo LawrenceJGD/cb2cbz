@@ -83,6 +83,18 @@ def remove_alpha(img: Image.Image) -> Image.Image:
             return converted
 
 
+@contextmanager
+def view_manager(buffer: BytesIO) -> Generator[memoryview, None, None]:
+    """Creates a context manager and yields BytesIO.getbuffer data."""
+    view: memoryview | None = None
+    try:
+        view = buffer.getbuffer()
+        yield view
+    finally:
+        if view is not None:
+            view.release()
+
+
 class BaseConverter(metaclass=abc.ABCMeta):
     """Base class for image converters."""
 
@@ -470,16 +482,6 @@ class JpegliConverter(BaseConverter):
     def convert(self, in_buffer: BytesIO) -> bytes:
         """Convert an image into JPEG using jpegli encoder and return it."""
 
-        @contextmanager
-        def view_manager(buffer: BytesIO) -> Generator[memoryview, None, None]:
-            view: memoryview | None = None
-            try:
-                view = buffer.getbuffer()
-                yield view
-            finally:
-                if view is not None:
-                    view.release()
-
         def run(img: Image.Image, info: dict[str, Any]) -> bytes:
             if img.has_transparency_data:
                 new_img: Image.Image = remove_alpha(img)
@@ -534,16 +536,15 @@ class JpegliConverter(BaseConverter):
 class JpegXLEffortEnum(IntEnum):
     """Enumeration for JpegXLConverter effort option."""
 
-    ONE = 1
-    TWO = 2
-    THREE = 3
-    FOUR = 4
-    FIVE = 5
-    SIX = 6
-    SEVEN = 7
-    EIGHT = 8
-    NINE = 9
-    TEN = 10
+    LIGHTNING = 1
+    THUNDER = 2
+    FALCON = 3
+    CHEETAH = 4
+    HARE = 5
+    WOMBAT = 6
+    SQIRREL = 7
+    KITTEN = 8
+    TORTOISE = 9
 
 
 class JpegXLDecodingSpeedEnum(IntEnum):
@@ -562,16 +563,19 @@ class JpegXLConverter(BaseConverter):
     format = ImageFormat.JPEGXL
     pil_format = "JXL"
     extension = ".jxl"
-    options = {"effort", "decoding_speed"}
+    options = {"effort", "decoding_speed", "jpegtran"}
     quality: int
     effort: JpegXLEffortEnum
     decoding_speed: JpegXLDecodingSpeedEnum
+    jpegtran: bool
 
     def __init__(
         self,
         quality: int = JPEG_DEFAULT,
-        effort: JpegXLEffortEnum = JpegXLEffortEnum.SEVEN,
+        effort: JpegXLEffortEnum = JpegXLEffortEnum.SQIRREL,
         decoding_speed: JpegXLDecodingSpeedEnum = JpegXLDecodingSpeedEnum.ZERO,
+        *,
+        jpegtran: bool = False,
     ):
         """Initializes the object.
 
@@ -583,6 +587,10 @@ class JpegXLConverter(BaseConverter):
             decoding_speed: Improves image decoding speed at the expense
                 of quality or density. It must be an int between 0 and
                 4.
+            jpegtran: If True passes JPEG files to jpegtran program
+                before converting JPEG XL. It helps to recover JPEG
+                images that have an invalid bitstream that can't be
+                decoded by the JPEG XL encoder.
 
         Raises:
             ValueError: If any of the args is invalid.
@@ -594,6 +602,7 @@ class JpegXLConverter(BaseConverter):
         self.quality = quality
         self.effort = effort
         self.decoding_speed = decoding_speed
+        self.jpegtran = jpegtran
 
     @classmethod
     def parse_options(cls, options: str) -> Self:
@@ -602,8 +611,9 @@ class JpegXLConverter(BaseConverter):
         Raises:
             ValueError: If there are invalid options or invalid values.
         """
-        effort: JpegXLEffortEnum = JpegXLEffortEnum.SEVEN
+        effort: JpegXLEffortEnum = JpegXLEffortEnum.SQIRREL
         decoding_speed: JpegXLDecodingSpeedEnum = JpegXLDecodingSpeedEnum.ZERO
+        jpegtran: bool = False
         name: str
         value: str
         for name, value in cls._parse_opt(options):
@@ -621,7 +631,50 @@ class JpegXLConverter(BaseConverter):
                     msg = "decoding_speed value must be an integer between 0 and 4"
                     raise ValueError(msg) from err
 
-        return cls(effort=effort, decoding_speed=decoding_speed)
+            elif name == "jpegtran":
+                jpegtran = parse_str_bool(value, "jpegtran")
+
+        return cls(effort=effort, decoding_speed=decoding_speed, jpegtran=jpegtran)
+
+    def _jpg_to_jxl(self, in_buffer: BytesIO, img: Image.Image) -> bytes:
+
+        enc: pillow_jxl.Encoder = pillow_jxl.Encoder(  # type: ignore[call-arg]
+            mode=img.mode,
+            parallel=True,
+            lossless=False,
+            quality=self.quality,
+            decoding_speed=int(self.decoding_speed),
+            effort=int(self.effort),
+            use_container=True,
+            use_original_profile=True,
+        )
+
+        exif: bytes | None = img.info.get("exif", img.getexif().tobytes())
+        if exif and exif.startswith(b"Exif\x00\x00"):
+            exif = exif[6:]
+
+        if self.jpegtran:
+            with view_manager(in_buffer) as view:
+                buf_data = subprocess.run(  # noqa: S603
+                    ("jpegtran", "-copy", "all"),
+                    input=view,
+                    capture_output=True,
+                    check=True,
+                ).stdout
+        else:
+            buf_data = in_buffer.getvalue()
+        in_buffer.close()
+
+        jxl: bytes = enc(  # type: ignore[call-arg]
+            buf_data,
+            img.width,
+            img.height,
+            jpeg_encode=True,
+            exif=exif,
+            jumb=img.info.get("jumb"),
+            xmp=img.info.get("xmp"),
+        )
+        return jxl
 
     def convert(self, in_buffer: BytesIO) -> ImageData | bytes:
         """Convert an image into JPEG XL and return it.
@@ -642,39 +695,11 @@ class JpegXLConverter(BaseConverter):
             PIL.UnindentifiedImageError: If Pillow can't identify if
                 in_buffer is an image.
         """
-        enc: pillow_jxl.Encoder | None = None
         img: Image.Image = Image.open(in_buffer)
 
         if img.format == "JPEG" and img.mode in {"RGB", "L"}:
-            enc = pillow_jxl.Encoder(  # type: ignore[call-arg]
-                mode=img.mode,
-                parallel=True,
-                lossless=False,
-                quality=self.quality,
-                decoding_speed=self.decoding_speed,
-                effort=self.effort,
-                use_container=True,
-                use_original_profile=True,
-            )
-
-            buf_data: bytes = in_buffer.getvalue()
-            in_buffer.close()
-
-            exif: bytes | None = img.info.get("exif", img.getexif().tobytes())
-            if exif and exif.startswith(b"Exif\x00\x00"):
-                exif = exif[6:]
-
             with img:
-                jxl: bytes = enc(  # type: ignore[call-arg]
-                    buf_data,
-                    img.width,
-                    img.height,
-                    jpeg_encode=True,
-                    exif=exif,
-                    jumb=img.info.get("jumb"),
-                    xmp=img.info.get("xmp"),
-                )
-                return jxl
+                return self._jpg_to_jxl(in_buffer, img)
 
         if img.format == "PNG":
             # This is necessary for getting EXIF data if the PNG files has it.
@@ -736,7 +761,7 @@ class PngConverter(BaseConverter):
         Raises:
             ValueError: If there are invalid options or invalid values.
         """
-        optimize = False
+        optimize: bool = False
         name: str
         value: str
         for name, value in cls._parse_opt(options):

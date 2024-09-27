@@ -63,7 +63,7 @@ class TestJpegliSubsamplingEnum:
 class TestJpegXLEffortEnum:
     """Test that JpegXLEffortEnum has the right values."""
 
-    @pytest.mark.parametrize("value", tuple(range(1, 11)))
+    @pytest.mark.parametrize("value", tuple(range(1, 10)))
     def test_jpegxleffortenum_valid_values(self, value):
         """Test valid values for JpegXLEffortEnum."""
         effort = converters.JpegXLEffortEnum(value)
@@ -543,7 +543,7 @@ class TestJpegXLConverter:
     def test_jpegxlconverter_init_default(self):
         """Test __init__ method with default args."""
         quality = 90
-        effort = converters.JpegXLEffortEnum.SEVEN
+        effort = converters.JpegXLEffortEnum.SQIRREL
         decoding_speed = converters.JpegXLDecodingSpeedEnum.ZERO
 
         converter = converters.JpegXLConverter()
@@ -582,6 +582,12 @@ class TestJpegXLConverter:
             )
             assert isinstance(converter, converters.JpegXLConverter)
             assert converter.decoding_speed == num
+
+    @pytest.mark.parametrize("value,boolean", BOOLS)
+    def test_jpegxlconverter_parse_options_jpegtran(self, value, boolean):
+        """Test valid values for jpegtran option."""
+        converter = converters.JpegXLConverter.parse_options(f"jpegtran={value}")
+        assert converter.jpegtran is boolean
 
     def test_jpegxlconverter_parse_options_invalid_decoding_speed(self):
         """Test invalid values for decoding_speed option."""
@@ -649,6 +655,43 @@ class TestJpegXLConverter:
         with BytesIO(result) as jpegxl, Image.open(jpegxl) as img:
             assert img.format == "JXL"
             assert img.mode == mode, f"{img.mode} != {mode}"
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize(
+        "img,effort,decoding_speed,jpegtran",
+        list(
+            product(
+                (
+                    ("2864_compact_graphs_rgb.jpg", "JPEG"),
+                    ("2955_pole_vault_p.png", "PNG"),
+                ),
+                converters.JpegXLEffortEnum,
+                converters.JpegXLDecodingSpeedEnum,
+                (True, False),
+            )
+        ),
+    )
+    def test_jpegxlconverter_convert_options(
+        self, test_data, img, effort, decoding_speed, jpegtran
+    ):
+        """Test JpegliConverter.convert with all possible arguments."""
+        converter = converters.JpegXLConverter(
+            effort=effort, decoding_speed=decoding_speed, jpegtran=jpegtran
+        )
+
+        with (test_data / img[0]).resolve().open(mode="rb") as img_file:
+            data = BytesIO(img_file.read())
+
+        with data:
+            result = converter.convert(data)
+        if img[1] == "JPEG":
+            assert isinstance(
+                result, bytes
+            ), f"result should be a bytes object, it is {type(result)}"
+        else:
+            assert isinstance(
+                result, converters.ImageData
+            ), f"result should be a ImageData object, it is {type(result)}"
 
 
 class TestPngConverter:
