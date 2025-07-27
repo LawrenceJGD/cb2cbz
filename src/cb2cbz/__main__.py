@@ -355,7 +355,7 @@ class EntryStorer:
             except UnidentifiedImageError:
                 errormsg(
                     f'Cannot identify if "{entry.pathname}" is an image. '
-                    "Skipping conversion..."
+                    "Skipping its conversion..."
                 )
                 simple_save(in_buffer)
                 return

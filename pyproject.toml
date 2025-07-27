@@ -17,24 +17,18 @@ license = {text = "MIT"}
 [project.scripts]
 cb2cbz = "cb2cbz.__main__:main"
 
-[build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
+[tool.uv]
+package = true
 
-
-[tool.pdm]
-distribution = true
-
-[tool.pdm.dev-dependencies]
-lint = [
+[dependency-groups]
+dev = [
     "mypy>=1.10.1",
     "black>=24.4.2",
     "ruff>=0.5.3",
-]
-tests = [
     "pytest>=8.3.1",
     "pytest-datadir>=1.5.0",
     "coverage>=7.6.0",
+    "types-pillow>=10.2.0.20240822",
 ]
 
 [tool.ruff]
@@ -69,6 +63,7 @@ markers = [
 [tool.mypy]
 strict = true
 sqlite_cache = true
+exclude = "tests"
 
 [tool.coverage.run]
 dynamic_context = "test_function"

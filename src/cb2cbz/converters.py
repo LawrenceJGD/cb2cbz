@@ -640,7 +640,6 @@ class JpegXLConverter(BaseConverter):
 
         enc: pillow_jxl.Encoder = pillow_jxl.Encoder(  # type: ignore[call-arg]
             mode=img.mode,
-            parallel=True,
             lossless=False,
             quality=self.quality,
             decoding_speed=int(self.decoding_speed),
@@ -686,8 +685,8 @@ class JpegXLConverter(BaseConverter):
             A bytes object that contains a JPEG XL image or a tuple that
             has two elements:
 
-                0. A PIL.Image.Image object that represents the JPEG XL
-                    image.
+                0. A :cls:`PIL.Image.Image` object that represents the
+                    JPEG XL image.
                 1. A boolean indicating whether the image depends on the
                     BytesIO object remaining open.
 
