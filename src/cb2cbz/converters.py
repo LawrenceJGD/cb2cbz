@@ -654,7 +654,7 @@ class JpegXLConverter(BaseConverter):
 
         if self.jpegtran:
             with view_manager(in_buffer) as view:
-                buf_data = subprocess.run(  # noqa: S603
+                buf_data = subprocess.run(
                     ("jpegtran", "-copy", "all"),
                     input=view,
                     capture_output=True,

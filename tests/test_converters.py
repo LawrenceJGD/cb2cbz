@@ -6,8 +6,9 @@ from io import BytesIO
 from itertools import chain, product
 
 import pytest
-from cb2cbz import converters
 from PIL import Image
+
+from cb2cbz import converters
 
 BOOLS = (("true", True), ("1", True), ("false", False), ("0", False))
 

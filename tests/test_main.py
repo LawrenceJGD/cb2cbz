@@ -3,13 +3,17 @@
 # ruff: noqa: S101
 
 import sys
+from contextlib import nullcontext
 from itertools import chain, product
 from pathlib import Path, PurePath
+from subprocess import CalledProcessError
 from types import NoneType
 
 import pytest
-from cb2cbz import __main__, converters
 from libarchive import file_reader, file_writer
+from libarchive.entry import FileType
+
+from cb2cbz import __main__, converters
 
 EXTENSIONS = ("cbt", "cb7", "cbr", "cbz")
 CONVERTERS = (
@@ -175,6 +179,63 @@ class TestParseParams:
                 )
 
 
+class MockArchiveWrite:
+    """A mock of :cls:`libarchive.write.ArchiveWrite`."""
+    def add_file_from_memory(*args, **kwargs):
+        """Does nothing."""
+
+
+class MockConverter(converters.BaseConverter):
+    """A mock of a converter for doing a test."""
+
+    format = ""
+    pil_format = None
+    extension = ""
+    options = set()
+
+    def __init__(self, quality):
+        """Stores the quality."""
+        self.quality = quality
+
+    @classmethod
+    def parse_options(cls, options):  # noqa: ARG003
+        """It just returns an instance of the class."""
+        return cls(-1)
+
+    def convert(self, in_buffer):  # noqa: ARG002
+        """Raises a CalledProcessError for testing."""
+        msg = "Test"
+        raise CalledProcessError(msg, "mytest", stderr=b"Test error")
+
+
+class MockConverter2(MockConverter):
+    """A mock of a converter that returns an empty bytes object."""
+    def convert(self, in_buffer):  # noqa: ARG002
+        """Returns an empty bytes object."""
+        return converters.ImageData(nullcontext(), {}, new=False)
+
+
+class MockEntry:
+    """A mock of an entry for doing a test."""
+
+    def __init__(self, pathname):
+        """Initializes the class."""
+        self.pathname = pathname
+        self.filetype = FileType.REGULAR_FILE
+        self.perm = self.uid = self.gid = self.size = self.atime = self.mtime = 0
+        self.ctime = self.birthtime = self.rdev = self.rdevmajor = self.rdevminor = 0
+        self.uname = self.gname = ""
+
+    def get_blocks(self):
+        """Returns an empty bytes object."""
+        yield b""
+
+
+def test_mock_converter_parse_options():
+    """Test that :meth:`MockConverter.parse_options` returns an instance."""
+    assert isinstance(MockConverter.parse_options(("1", "2", "3")), MockConverter)
+
+
 class TestEntryStorer:
     """Tests for EntryStorer methods."""
 
@@ -235,6 +296,27 @@ class TestEntryStorer:
 
         assert files == found, f"the difference between files an found {files ^ found}"
 
+    def test_called_process_error_message(self, capsys):
+        """Test if an error message is printed when a subprocess fails."""
+        converter = MockConverter(0)
+        entry_storer = __main__.EntryStorer(MockArchiveWrite(), converter)
+        with pytest.raises(SystemExit):
+            entry_storer.save_entry(MockEntry("A test"), "test")
+
+        captured = capsys.readouterr()
+        print(captured)
+        assert captured.err.strip() == (
+            f"{PurePath(sys.argv[0]).name}: Error: An error happened while "
+            'encoding "A test": Test error'
+        )
+
+    def test_error_when_pil_format_is_none(self):
+        """Test if a ValueError exception is raised if pil_format is None."""
+        converter = MockConverter2(0)
+        entry_storer = __main__.EntryStorer(MockArchiveWrite(), converter)
+        with pytest.raises(ValueError):
+            entry_storer.save_entry(MockEntry("A test"), "test")
+
 
 class TestMain:
     """Tests for main() function."""
@@ -276,6 +358,15 @@ class TestMain:
     def test_duplicated_dir(self, test_data, tmp_path):
         """Test if main() gives error when there is duplicated folders."""
         in_path = test_data / "duplicated_dir.cbz"
+        out_path = tmp_path / "test_duplicated.cbz"
+        with pytest.raises(SystemExit) as exc_info:
+            __main__.main(("--format", "jpeg", str(in_path), str(out_path)))
+
+        assert exc_info.value.code == 1
+
+    def test_duplicated_file_and_dir(self, test_data, tmp_path):
+        """Test if main() gives error when there is duplicated folders."""
+        in_path = test_data / "duplicated_file_dir.cbz"
         out_path = tmp_path / "test_duplicated.cbz"
         with pytest.raises(SystemExit) as exc_info:
             __main__.main(("--format", "jpeg", str(in_path), str(out_path)))

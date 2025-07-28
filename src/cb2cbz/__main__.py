@@ -28,7 +28,7 @@ from PIL import Image, UnidentifiedImageError
 from . import converters
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Sequence
 
     from libarchive.read import (  # type: ignore[import-untyped]
         ArchiveRead,
@@ -280,7 +280,7 @@ class EntryStorer:
     def _save_buf(
         self, out_name: str, entry: ArchiveEntry, img: Image.Image, meta: dict[str, Any]
     ) -> None:
-        if self.converter is None:
+        if self.converter is None:  # pragma: no cover
             msg: str = "converter was not specified"
             raise ValueError(msg)
         if self.converter.pil_format is None:
@@ -323,23 +323,18 @@ class EntryStorer:
         Args:
             entry: Entry from the input comic book archive.
             name: Path to the file in the archive that will saved.
-
-        Returns:
-            Path to where the entry was saved in the .cbz file.
         """
-
-        def simple_save(data: bytes | Iterable[bytes]) -> None:
-            self.archive.add_file_from_memory(
-                name,
-                entry.size,
-                data,
-                entry.filetype,
-                entry.perm,
-                **get_entry_attrs(entry),
-            )
+        simple_save = partial(
+            self.archive.add_file_from_memory,
+            entry_path=name,
+            entry_size=entry.size,
+            filetype=entry.filetype,
+            permission=entry.perm,
+            **get_entry_attrs(entry),
+        )
 
         if self.converter is None:
-            simple_save(entry.get_blocks())
+            simple_save(entry_data=entry.get_blocks())
             return
 
         in_buffer: BytesIO
@@ -357,7 +352,7 @@ class EntryStorer:
                     f'Cannot identify if "{entry.pathname}" is an image. '
                     "Skipping its conversion..."
                 )
-                simple_save(in_buffer)
+                simple_save(entry_data=in_buffer)
                 return
 
             except subprocess.CalledProcessError as err:
@@ -458,5 +453,5 @@ def main(argv: Sequence[str] | None = None) -> None:
                 print(f"{entry.pathname} → {new_name}")
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__":  # pragma: no cover
+    main(sys.argv)

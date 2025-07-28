@@ -2,9 +2,7 @@
 name = "cb2cbz"
 version = "0.1.0"
 description = "Comic Book files to CBZ converter"
-authors = [
-    {name = "Lawrence González", email = "lawrencejgd@gmail.com"},
-]
+authors = [{ name = "Lawrence González", email = "lawrencejgd@gmail.com" }]
 dependencies = [
     "pillow>=10.4.0",
     "pillow-jxl-plugin>=1.2.5",
@@ -12,7 +10,7 @@ dependencies = [
 ]
 requires-python = ">=3.12"
 readme = "README.md"
-license = {text = "MIT"}
+license = { text = "MIT" }
 
 [project.scripts]
 cb2cbz = "cb2cbz.__main__:main"
@@ -29,6 +27,7 @@ dev = [
     "pytest-datadir>=1.5.0",
     "coverage>=7.6.0",
     "types-pillow>=10.2.0.20240822",
+    "pytest-cov>=6.2.1",
 ]
 
 [tool.ruff]
@@ -39,11 +38,59 @@ target-version = "py312"
 fixable = ["I001"]
 ignore = ["ANN101", "ANN102", "UP007", "UP006", "RUF012", "TD003"]
 select = [
-    "F", "E", "W", "C90", "I", "N", "D", "UP", "YTT", "ASYNC", "ASYNC1", "S",
-    "BLE", "FBT", "B", "A", "C4", "DTZ", "T10", "EM", "EXE", "FA", "ISC", "ICN",
-    "LOG", "G", "INP", "PIE", "Q", "RSE", "RET", "SLF", "SLOT", "SIM", "TID",
-    "TCH", "INT", "INT", "ARG", "PTH", "TD", "PLC", "FIX", "ERA", "PD", "PLC",
-    "PLE", "PLR", "PLW", "TRY", "FLY", "PERF", "RUF"
+    "F",
+    "E",
+    "W",
+    "C90",
+    "I",
+    "N",
+    "D",
+    "UP",
+    "YTT",
+    "ASYNC",
+    "ASYNC1",
+    "S",
+    "BLE",
+    "FBT",
+    "B",
+    "A",
+    "C4",
+    "DTZ",
+    "T10",
+    "EM",
+    "EXE",
+    "FA",
+    "ISC",
+    "ICN",
+    "LOG",
+    "G",
+    "INP",
+    "PIE",
+    "Q",
+    "RSE",
+    "RET",
+    "SLF",
+    "SLOT",
+    "SIM",
+    "TID",
+    "TCH",
+    "INT",
+    "INT",
+    "ARG",
+    "PTH",
+    "TD",
+    "PLC",
+    "FIX",
+    "ERA",
+    "PD",
+    "PLC",
+    "PLE",
+    "PLR",
+    "PLW",
+    "TRY",
+    "FLY",
+    "PERF",
+    "RUF",
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -56,9 +103,7 @@ target-version = ["py312"]
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
 pythonpath = ["."]
-markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-]
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 
 [tool.mypy]
 strict = true
