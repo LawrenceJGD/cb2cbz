@@ -120,7 +120,7 @@ class TestParseParams:
         assert params.input == Path("test.cbr")
         assert params.output == Path("tested.cbz")
 
-    @pytest.mark.parametrize("format_,converter", format_converters)
+    @pytest.mark.parametrize(("format_", "converter"), format_converters)
     def test_short_format(self, format_, converter):
         """Test -f argument."""
         params = __main__.parse_params(("-f", str(format_), "test.cbr"))
@@ -128,7 +128,7 @@ class TestParseParams:
         print(type(params.converter))
         assert isinstance(params.converter, converter)
 
-    @pytest.mark.parametrize("format_,converter", format_converters)
+    @pytest.mark.parametrize(("format_", "converter"), format_converters)
     def test_long_format(self, format_, converter):
         """Test --format argument."""
         params1 = __main__.parse_params(("--format", str(format_), "test.cbr"))
@@ -138,7 +138,7 @@ class TestParseParams:
         assert isinstance(params1.converter, converter)
         assert isinstance(params2.converter, converter)
 
-    @pytest.mark.parametrize("format_", ("jpeg", "jpegli", "jpegxl"))
+    @pytest.mark.parametrize("format_", ["jpeg", "jpegli", "jpegxl"])
     def test_default_quality(self, format_):
         """Test default quality for JPEG formats."""
         params = __main__.parse_params(("--format", format_, "test.cbr"))
@@ -154,7 +154,7 @@ class TestParseParams:
         params = __main__.parse_params(("--format", "no-change", "test.cbr"))
         assert params.converter is None
 
-    @pytest.mark.parametrize("format_", ("jpeg", "jpegli", "jpegxl"))
+    @pytest.mark.parametrize("format_", ["jpeg", "jpegli", "jpegxl"])
     def test_jpeg_quality(self, format_):
         """Test --quality for jpeg."""
         quality = 85
@@ -197,6 +197,7 @@ class TestParseParams:
 
 class MockArchiveWrite:
     """A mock of :cls:`libarchive.write.ArchiveWrite`."""
+
     def add_file_from_memory(*args, **kwargs):
         """Does nothing."""
 
@@ -204,7 +205,7 @@ class MockArchiveWrite:
 class MockConverter(converters.BaseConverter):
     """A mock of a converter for doing a test."""
 
-    format = ""
+    format = "TEST"
     pil_format = None
     extension = ""
     options = set()
@@ -226,6 +227,7 @@ class MockConverter(converters.BaseConverter):
 
 class MockConverter2(MockConverter):
     """A mock of a converter that returns an empty bytes object."""
+
     def convert(self, in_buffer):  # noqa: ARG002
         """Returns an empty bytes object."""
         return converters.ImageData(nullcontext(), {}, new=False)
@@ -258,7 +260,7 @@ class TestEntryStorer:
     ext_and_converters = tuple(product((*CONVERTERS, None), EXTENSIONS))
 
     @pytest.mark.slow
-    @pytest.mark.parametrize("conv,ext", ext_and_converters)
+    @pytest.mark.parametrize(("conv", "ext"), ext_and_converters)
     def test_entrystorer_init(self, tmp_path, conv, ext):
         """Test EntryStorer.__init__ with multiple formats."""
         out_path = tmp_path / f"test_{ext}.cbz"
@@ -272,7 +274,7 @@ class TestEntryStorer:
             assert converter is None or isinstance(entry_storer.converter, conv)
 
     @pytest.mark.slow
-    @pytest.mark.parametrize("conv,ext", ext_and_converters)
+    @pytest.mark.parametrize(("conv", "ext"), ext_and_converters)
     def test_entrystorer_save_entry(self, test_data, tmp_path, conv, ext):
         """Test EntryStorar.save_entry with multiple formats."""
         in_path = test_data / f"xkcd.{ext}"
@@ -330,7 +332,10 @@ class TestEntryStorer:
         """Test if a ValueError exception is raised if pil_format is None."""
         converter = MockConverter2(0)
         entry_storer = __main__.EntryStorer(MockArchiveWrite(), converter)
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=f"{converter.format} cannot be used for converting through Pillow",
+        ):
             entry_storer.save_entry(MockEntry("A test"), "test")
 
 

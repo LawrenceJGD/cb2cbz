@@ -653,7 +653,6 @@ class JpegXLConverter(BaseConverter):
         return cls(effort=effort, decoding_speed=decoding_speed, jpegtran=jpegtran)
 
     def _jpg_to_jxl(self, in_buffer: BytesIO, img: Image.Image) -> bytes:
-
         enc: pillow_jxl.Encoder = pillow_jxl.Encoder(  # type: ignore[call-arg]
             mode=img.mode,
             lossless=False,

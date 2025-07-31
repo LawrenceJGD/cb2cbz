@@ -32,48 +32,54 @@ BOOLS = (("true", True), ("1", True), ("false", False), ("0", False))
 class TestJpegSubsamplingEnum:
     """Test that JpegSubsamplingEnum has the right values."""
 
-    @pytest.mark.parametrize("value", ("keep", "4:4:4", "4:2:2", "4:2:0"))
+    @pytest.mark.parametrize("value", ["keep", "4:4:4", "4:2:2", "4:2:0"])
     def test_jpegsubsamplingenum_valid_values(self, value):
         """Test valid values for JpegSubsamplingEnum."""
         subsampling = converters.JpegSubsamplingEnum(value)
         assert subsampling == value
 
-    @pytest.mark.parametrize("value", ("test", "4:4:0"))
+    @pytest.mark.parametrize("value", ["test", "4:4:0"])
     def test_jpegsubsamplingenum_invalid_values(self, value):
         """Test invalid values for JpegSubsamplingEnum."""
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=f"{value!r} is not a valid JpegSubsamplingEnum"
+        ):
             converters.JpegSubsamplingEnum(value)
 
 
 class TestJpegliProgressiveEnum:
     """Test that JpegliProgressiveEnum has the right values."""
 
-    @pytest.mark.parametrize("value", (0, 1, 2))
+    @pytest.mark.parametrize("value", [0, 1, 2])
     def test_jpegliprogressiveenum_valid_values(self, value):
         """Test valid values for JpegliProgressiveEnum."""
         progressive = converters.JpegliProgressiveEnum(value)
         assert progressive == value
 
-    @pytest.mark.parametrize("value", (-1, 3))
+    @pytest.mark.parametrize("value", [-1, 3])
     def test_jpegliprogressiveenum_invalid_values(self, value):
         """Test invalid values for JpegliProgressiveEnum."""
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=f"{value!r} is not a valid JpegliProgressiveEnum"
+        ):
             converters.JpegliProgressiveEnum(value)
 
 
 class TestJpegliSubsamplingEnum:
     """Test that JpegliSubsamplingEnum has the right values."""
 
-    @pytest.mark.parametrize("value", ("444", "440", "422", "420"))
+    @pytest.mark.parametrize("value", ["444", "440", "422", "420"])
     def test_jpeglisubsamplingenum_valid_values(self, value):
         """Test invalid values for JpegliSubsamplingEnum."""
         subsampling = converters.JpegliSubsamplingEnum(value)
         assert subsampling == value
 
-    @pytest.mark.parametrize("value", ("test", "4:4:4", "4:4:2"))
+    @pytest.mark.parametrize("value", ["test", "4:4:4", "4:4:2"])
     def test_jpeglisubsamplingenum_invalid_values(self, value):
         """Test invalid values for JpegliSubsamplingEnum."""
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=f"{value!r} is not a valid JpegliSubsamplingEnum"
+        ):
             converters.JpegliSubsamplingEnum(value)
 
 
@@ -86,10 +92,12 @@ class TestJpegXLEffortEnum:
         effort = converters.JpegXLEffortEnum(value)
         assert effort == value
 
-    @pytest.mark.parametrize("value", (0, 11))
+    @pytest.mark.parametrize("value", [0, 11])
     def test_jpegxleffortenum_invalid_values(self, value):
         """Test invalid values for JpegXLEffortEnum."""
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=f"{value!r} is not a valid JpegXLEffortEnum"
+        ):
             converters.JpegXLEffortEnum(value)
 
 
@@ -102,10 +110,12 @@ class TestJpegXLDecodingSpeedEnum:
         effort = converters.JpegXLDecodingSpeedEnum(value)
         assert effort == value
 
-    @pytest.mark.parametrize("value", (-1, 5))
+    @pytest.mark.parametrize("value", [-1, 5])
     def test_jpegxldecodingspeedenum_invalid_values(self, value):
         """Test invalid values for JpegXLDecodingSpeedEnum."""
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match=f"{value!r} is not a valid JpegXLDecodingSpeedEnum"
+        ):
             converters.JpegXLDecodingSpeedEnum(value)
 
 
@@ -143,25 +153,25 @@ class TestJpegConverter:
             ):
                 converters.JpegConverter(quality=i)
 
-    @pytest.mark.parametrize("value,bool_val", BOOLS)
+    @pytest.mark.parametrize(("value", "bool_val"), BOOLS)
     def test_jpegconverter_parse_options_optimize(self, value, bool_val):
         """Test JpegConverter.parse_options using optimize option."""
         converter = converters.JpegConverter.parse_options(f"optimize={value}")
         assert converter.optimize is bool_val
 
-    @pytest.mark.parametrize("value,bool_val", BOOLS)
+    @pytest.mark.parametrize(("value", "bool_val"), BOOLS)
     def test_jpegconverter_parse_options_progressive(self, value, bool_val):
         """Test JpegConverter.parse_options using progressive option."""
         converter = converters.JpegConverter.parse_options(f"progressive={value}")
         assert converter.progressive == bool_val
 
-    @pytest.mark.parametrize("value,bool_val", BOOLS)
+    @pytest.mark.parametrize(("value", "bool_val"), BOOLS)
     def test_jpegconverter_parse_options_keep_rgb(self, value, bool_val):
         """Test JpegConverter.parse_options using keep_rgb option."""
         converter = converters.JpegConverter.parse_options(f"keep_rgb={value}")
         assert converter.keep_rgb == bool_val
 
-    @pytest.mark.parametrize("value", ("keep", "4:4:4", "4:2:2", "4:2:0"))
+    @pytest.mark.parametrize("value", ["keep", "4:4:4", "4:2:2", "4:2:0"])
     def test_jpegconverter_parse_options_subsamping(self, value):
         """Test JpegConverter.parse_options using subsampling option."""
         converter = converters.JpegConverter.parse_options(f"subsampling={value}")
@@ -198,8 +208,8 @@ class TestJpegConverter:
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
-        "img_path,mode,new",
-        (
+        ("img_path", "mode", "new"),
+        [
             ("2953_alien_theories.png", "L", False),
             ("2953_alien_theories_2.jpg", "L", False),
             ("2953_alien_theories_3.pfm", "RGB", True),
@@ -211,7 +221,7 @@ class TestJpegConverter:
             ("2864_compact_graphs_rgba.png", "RGB", True),
             ("2864_compact_graphs_cmyk.jpg", "CMYK", False),
             ("cursed_p_alpha.tif", "RGB", True),
-        ),
+        ],
     )
     def test_jpegconverter_convert(self, test_data, img_path, mode, new):
         """Test convert function using a JPEG from a BytesIO object."""
@@ -227,7 +237,7 @@ class TestJpegConverter:
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
-        "subsampling,optimize,keep_rgb,progressive",
+        ("subsampling", "optimize", "keep_rgb", "progressive"),
         list(
             product(
                 (*converters.JpegSubsamplingEnum, None),
@@ -263,7 +273,7 @@ class TestJpegConverter:
             assert isinstance(result, converters.ImageData)
 
     @pytest.mark.parametrize(
-        "progressive,dpi,icc_profile,exif,comment",
+        ("progressive", "dpi", "icc_profile", "exif", "comment"),
         list(
             product(
                 (0, 1, 2),
@@ -352,13 +362,13 @@ class TestJpegliConverter:
         converter = converters.JpegliConverter(subsampling=value)
         assert converter.subsampling == value
 
-    @pytest.mark.parametrize("value", (True, False))
+    @pytest.mark.parametrize("value", [True, False])
     def test_jpegliconverter_init_valid_xyb(self, value):
         """Test JpegliConverter.__init__ with xyb arg."""
         converter = converters.JpegliConverter(xyb=value)
         assert converter.xyb == value
 
-    @pytest.mark.parametrize("value", (True, False))
+    @pytest.mark.parametrize("value", [True, False])
     def test_jpegliconverter_init_valid_adaptive_quantization(self, value):
         """Test JpegliConverter.__init__ with adaptive_quantization arg."""
         converter = converters.JpegliConverter(adaptive_quantization=value)
@@ -375,13 +385,13 @@ class TestJpegliConverter:
         converter = converters.JpegliConverter(std_quant=False)
         assert converter.std_quant is False
 
-    @pytest.mark.parametrize("value", (True, False))
+    @pytest.mark.parametrize("value", [True, False])
     def test_jpegliconverter_init_valid_std_quant(self, value):
         """Test JpegliConverter.__init__ with std_quant."""
         converter = converters.JpegliConverter(std_quant=value)
         assert converter.std_quant is value
 
-    @pytest.mark.parametrize("value", (-1, 101))
+    @pytest.mark.parametrize("value", [-1, 101])
     def test_jpegliconverter_init_invalid_quality(self, value):
         """Test JpegliConverter.__init__ using invalid quality values."""
         with pytest.raises(
@@ -404,25 +414,25 @@ class TestJpegliConverter:
             converter = converters.JpegliConverter.parse_options(f"progressive={i}")
             assert converter.progressive == i
 
-    @pytest.mark.parametrize("value,num", (("true", 2), ("false", 0)))
+    @pytest.mark.parametrize(("value", "num"), [("true", 2), ("false", 0)])
     def test_jpegliconverter_parse_options_valid_progressive_bools(self, value, num):
         """Test JpegliConverter.parse_options with booleans in progressive."""
         converter = converters.JpegliConverter.parse_options(f"progressive={value}")
         assert converter.progressive == num
 
-    @pytest.mark.parametrize("value", ("4:4:4", "4:4:0", "4:2:2", "4:2:0"))
+    @pytest.mark.parametrize("value", ["4:4:4", "4:4:0", "4:2:2", "4:2:0"])
     def test_jpegliconverter_parse_options_valid_subsampling(self, value):
         """Test JpegliConverter.parse_options with subsampling."""
         converter = converters.JpegliConverter.parse_options(f"subsampling={value}")
         assert converter.subsampling == value.replace(":", "")
 
-    @pytest.mark.parametrize("value,boolean", BOOLS)
+    @pytest.mark.parametrize(("value", "boolean"), BOOLS)
     def test_jpegliconverter_parse_options_valid_xyb(self, value, boolean):
         """Test JpegliConverter.parse_options with xyb."""
         converter = converters.JpegliConverter.parse_options(f"xyb={value}")
         assert converter.xyb is boolean
 
-    @pytest.mark.parametrize("value,boolean", BOOLS)
+    @pytest.mark.parametrize(("value", "boolean"), BOOLS)
     def test_jpegliconverter_parse_options_valid_adaptive_quantization(
         self, value, boolean
     ):
@@ -445,13 +455,13 @@ class TestJpegliConverter:
         converter = converters.JpegliConverter.parse_options("std_quant=false")
         assert converter.std_quant is False
 
-    @pytest.mark.parametrize("value,boolean", BOOLS)
+    @pytest.mark.parametrize(("value", "boolean"), BOOLS)
     def test_jpegliconverter_parse_options_valid_std_quant(self, value, boolean):
         """Test JpegliConverter.parse_options with std_quant."""
         converter = converters.JpegliConverter.parse_options(f"std_quant={value}")
         assert converter.std_quant is boolean
 
-    @pytest.mark.parametrize("value", (-1, 3))
+    @pytest.mark.parametrize("value", [-1, 3])
     def test_jpegliconverter_parse_options_invalid_progressive_number(self, value):
         """Test parse_options with invalid numbers in progressive."""
         with pytest.raises(
@@ -477,8 +487,8 @@ class TestJpegliConverter:
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
-        "img_path,mode",
-        (
+        ("img_path", "mode"),
+        [
             ("2953_alien_theories.png", "L"),
             ("2953_alien_theories_2.jpg", "L"),
             ("2953_alien_theories_3.pfm", "RGB"),
@@ -491,7 +501,7 @@ class TestJpegliConverter:
             ("2864_compact_graphs_rgba.png", "RGB"),
             ("2864_compact_graphs_cmyk.jpg", "RGB"),
             ("cursed_p_alpha.tif", "RGB"),
-        ),
+        ],
     )
     def test_jpegliconverter_convert(self, test_data, img_path, mode):
         """Test convert function using a JPEG from a BytesIO object."""
@@ -509,7 +519,14 @@ class TestJpegliConverter:
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
-        "progressive,subsampling,xyb,adaptive_quantization,std_quant,fixed_code",
+        (
+            "progressive",
+            "subsampling",
+            "xyb",
+            "adaptive_quantization",
+            "std_quant",
+            "fixed_code",
+        ),
         list(
             filter(
                 lambda x: not (x[5] and x[0] != converters.JpegliProgressiveEnum.ZERO),
@@ -588,7 +605,9 @@ class TestJpegXLConverter:
     def test_jpegxlconverter_parse_options_invalid_effort(self):
         """Test invalid values for effort option."""
         for num in chain(range(-10, 1), range(11, 21)):
-            with pytest.raises(ValueError):
+            with pytest.raises(
+                ValueError, match="effort value must be an integer between 1 and 10"
+            ):
                 converters.JpegXLConverter.parse_options(f"effort={num}")
 
     def test_jpegxlconverter_parse_options_decoding_speed(self):
@@ -600,7 +619,7 @@ class TestJpegXLConverter:
             assert isinstance(converter, converters.JpegXLConverter)
             assert converter.decoding_speed == num
 
-    @pytest.mark.parametrize("value,boolean", BOOLS)
+    @pytest.mark.parametrize(("value", "boolean"), BOOLS)
     def test_jpegxlconverter_parse_options_jpegtran(self, value, boolean):
         """Test valid values for jpegtran option."""
         converter = converters.JpegXLConverter.parse_options(f"jpegtran={value}")
@@ -609,7 +628,10 @@ class TestJpegXLConverter:
     def test_jpegxlconverter_parse_options_invalid_decoding_speed(self):
         """Test invalid values for decoding_speed option."""
         for num in (-1, 5):
-            with pytest.raises(ValueError):
+            with pytest.raises(
+                ValueError,
+                match="decoding_speed value must be an integer between 0 and 4",
+            ):
                 converters.JpegXLConverter.parse_options(f"decoding_speed={num}")
 
     def test_jpegxlconverter_invalid_parse_options(self):
@@ -624,8 +646,8 @@ class TestJpegXLConverter:
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
-        "img_path,mode,new",
-        (
+        ("img_path", "mode", "new"),
+        [
             ("2953_alien_theories.png", "L", False),
             ("2953_alien_theories_3.pfm", "RGB", True),
             ("2952_routine_maintenance_1bit.png", "L", True),
@@ -637,7 +659,7 @@ class TestJpegXLConverter:
             ("2953_alien_theories_cmyk.jpg", "RGB", True),
             ("2864_compact_graphs_cmyk.jpg", "RGB", True),
             ("cursed_p_alpha.tif", "RGBA", True),
-        ),
+        ],
     )
     def test_jpegxlconverter_convert(self, test_data, img_path, mode, new):
         """Test convert function using images from BytesIO objects."""
@@ -653,11 +675,11 @@ class TestJpegXLConverter:
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
-        "img_path,mode",
-        (
+        ("img_path", "mode"),
+        [
             ("2953_alien_theories_2.jpg", "L"),
             ("2864_compact_graphs_rgb.jpg", "RGB"),
-        ),
+        ],
     )
     def test_jpegxlconverter_convert_jpeg(self, test_data, img_path, mode):
         """Test convert function using JPEG files."""
@@ -675,7 +697,7 @@ class TestJpegXLConverter:
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
-        "img,effort,decoding_speed,jpegtran",
+        ("img", "effort", "decoding_speed", "jpegtran"),
         list(
             product(
                 (
@@ -702,13 +724,13 @@ class TestJpegXLConverter:
         with data:
             result = converter.convert(data)
         if img[1] == "JPEG":
-            assert isinstance(
-                result, bytes
-            ), f"result should be a bytes object, it is {type(result)}"
+            assert isinstance(result, bytes), (
+                f"result should be a bytes object, it is {type(result)}"
+            )
         else:
-            assert isinstance(
-                result, converters.ImageData
-            ), f"result should be a ImageData object, it is {type(result)}"
+            assert isinstance(result, converters.ImageData), (
+                f"result should be a ImageData object, it is {type(result)}"
+            )
 
 
 class TestPngConverter:
@@ -722,7 +744,7 @@ class TestPngConverter:
         assert converter.quality == quality
         assert converter.optimize is optimize
 
-    @pytest.mark.parametrize("value", (True, False))
+    @pytest.mark.parametrize("value", [True, False])
     def test_pngconverter_init_optimize(self, value):
         """Test valid values for optimize argument."""
         converter = converters.PngConverter(optimize=value)
@@ -734,7 +756,7 @@ class TestPngConverter:
             converter = converters.PngConverter(quality=i)
             assert converter.quality == i
 
-    @pytest.mark.parametrize("value,bool_val", BOOLS)
+    @pytest.mark.parametrize(("value", "bool_val"), BOOLS)
     def test_pngconverter_parse_options_optimize(self, value, bool_val):
         """Test parse_options with optimize option."""
         converter = converters.PngConverter.parse_options(f"optimize={value}")
@@ -749,8 +771,8 @@ class TestPngConverter:
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
-        "img_path,mode,new",
-        (
+        ("img_path", "mode", "new"),
+        [
             ("2953_alien_theories.png", "L", False),
             ("2953_alien_theories_2.jpg", "L", False),
             ("2953_alien_theories_3.pfm", "P", True),
@@ -762,7 +784,7 @@ class TestPngConverter:
             ("2864_compact_graphs_rgba.png", "RGBA", False),
             ("2864_compact_graphs_cmyk.jpg", "RGB", True),
             ("cursed_p_alpha.tif", "RGBA", True),
-        ),
+        ],
     )
     def test_pngconverter_convert(self, test_data, img_path, mode, new):
         """Test convert function using image from BytesIO objects."""
@@ -781,14 +803,14 @@ class TestParseStrBool:
     """Test parse_str_bool function."""
 
     @pytest.mark.parametrize(
-        "value", ("1", *map("".join, product(*zip("true", "TRUE", strict=True))))
+        "value", ["1", *map("".join, product(*zip("true", "TRUE", strict=True)))]
     )
     def test_parse_str_true(self, value):
         """Test "true" with all combinations of upper and lower case."""
         assert converters.parse_str_bool(value, "test")
 
     @pytest.mark.parametrize(
-        "value", ("0", *map("".join, product(*zip("false", "FALSE", strict=True))))
+        "value", ["0", *map("".join, product(*zip("false", "FALSE", strict=True)))]
     )
     def test_parse_str_false(self, value):
         """Test "false" with all combinations of upper and lower case."""
@@ -802,7 +824,7 @@ class TestParseStrBool:
             converters.parse_str_bool("testing", "test")
 
     @pytest.mark.parametrize(
-        "optimize,dpi,icc_profile,exif",
+        ("optimize", "dpi", "icc_profile", "exif"),
         list(
             product(
                 (True, False),
