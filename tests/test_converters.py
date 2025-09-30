@@ -208,22 +208,22 @@ class TestJpegConverter:
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
-        ("img_path", "mode", "new"),
+        ("img_path", "mode"),
         [
-            ("2953_alien_theories.png", "L", False),
-            ("2953_alien_theories_2.jpg", "L", False),
-            ("2953_alien_theories_3.pfm", "RGB", True),
-            ("2952_routine_maintenance_1bit.png", "L", True),
-            ("2955_pole_vault_L_alpha.png", "L", True),
-            ("2955_pole_vault_p.png", "RGB", True),
-            ("2955_pole_vault_p_alpha.png", "RGB", True),
-            ("2864_compact_graphs.png", "RGB", False),
-            ("2864_compact_graphs_rgba.png", "RGB", True),
-            ("2864_compact_graphs_cmyk.jpg", "CMYK", False),
-            ("cursed_p_alpha.tif", "RGB", True),
+            ("2953_alien_theories.png", "L"),
+            ("2953_alien_theories_2.jpg", "L"),
+            ("2953_alien_theories_3.pfm", "RGB"),
+            ("2952_routine_maintenance_1bit.png", "L"),
+            ("2955_pole_vault_L_alpha.png", "L"),
+            ("2955_pole_vault_p.png", "RGB"),
+            ("2955_pole_vault_p_alpha.png", "RGB"),
+            ("2864_compact_graphs.png", "RGB"),
+            ("2864_compact_graphs_rgba.png", "RGB"),
+            ("2864_compact_graphs_cmyk.jpg", "CMYK"),
+            ("cursed_p_alpha.tif", "RGB"),
         ],
     )
-    def test_jpegconverter_convert(self, test_data, img_path, mode, new):
+    def test_jpegconverter_convert(self, test_data, img_path, mode):
         """Test convert function using a JPEG from a BytesIO object."""
         converter = converters.JpegConverter()
         with (test_data / img_path).open(mode="rb") as img_file:
@@ -231,15 +231,16 @@ class TestJpegConverter:
 
         with data:
             result = converter.convert(data)
-            assert isinstance(result, converters.ImageData)
-            assert result.img.mode == mode, f"{result.img.mode} != {mode}"
-            assert result.new is new, f"expected {new}, got {result.new}"
+        assert isinstance(result, bytes)
+        with BytesIO(result) as result_io, Image.open(result_io) as result_img:
+            assert result_img.mode == mode, f"{result_img.mode} != {mode}"
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
-        ("subsampling", "optimize", "keep_rgb", "progressive"),
+        ("img_path", "subsampling", "optimize", "keep_rgb", "progressive"),
         list(
             product(
+                ("2955_pole_vault_p.png", "2953_alien_theories_2.jpg"),
                 (*converters.JpegSubsamplingEnum, None),
                 (True, False),
                 (True, False),
@@ -250,6 +251,7 @@ class TestJpegConverter:
     def test_jpegconverter_convert_options(
         self,
         test_data,
+        img_path,
         subsampling,
         optimize,
         keep_rgb,
@@ -263,14 +265,13 @@ class TestJpegConverter:
             progressive=progressive,
         )
 
-        with (
-            (test_data / "2955_pole_vault_p.png").resolve().open(mode="rb") as img_file
-        ):
+        with (test_data / img_path).resolve().open(mode="rb") as img_file:
             data = BytesIO(img_file.read())
 
         with data:
             result = converter.convert(data)
-            assert isinstance(result, converters.ImageData)
+            assert isinstance(result, bytes)
+            assert result
 
     @pytest.mark.parametrize(
         ("progressive", "dpi", "icc_profile", "exif", "comment"),
@@ -646,22 +647,22 @@ class TestJpegXLConverter:
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
-        ("img_path", "mode", "new"),
+        ("img_path", "mode"),
         [
-            ("2953_alien_theories.png", "L", False),
-            ("2953_alien_theories_3.pfm", "RGB", True),
-            ("2952_routine_maintenance_1bit.png", "L", True),
-            ("2955_pole_vault_L_alpha.png", "LA", False),
-            ("2955_pole_vault_p.png", "RGB", True),
-            ("2955_pole_vault_p_alpha.png", "RGBA", True),
-            ("2864_compact_graphs.png", "RGB", False),
-            ("2864_compact_graphs_rgba.png", "RGBA", False),
-            ("2953_alien_theories_cmyk.jpg", "RGB", True),
-            ("2864_compact_graphs_cmyk.jpg", "RGB", True),
-            ("cursed_p_alpha.tif", "RGBA", True),
+            ("2953_alien_theories.png", "L"),
+            ("2953_alien_theories_3.pfm", "RGB"),
+            ("2952_routine_maintenance_1bit.png", "L"),
+            ("2955_pole_vault_L_alpha.png", "LA"),
+            ("2955_pole_vault_p.png", "RGB"),
+            ("2955_pole_vault_p_alpha.png", "RGBA"),
+            ("2864_compact_graphs.png", "RGB"),
+            ("2864_compact_graphs_rgba.png", "RGBA"),
+            ("2953_alien_theories_cmyk.jpg", "RGB"),
+            ("2864_compact_graphs_cmyk.jpg", "RGB"),
+            ("cursed_p_alpha.tif", "RGBA"),
         ],
     )
-    def test_jpegxlconverter_convert(self, test_data, img_path, mode, new):
+    def test_jpegxlconverter_convert(self, test_data, img_path, mode):
         """Test convert function using images from BytesIO objects."""
         converter = converters.JpegXLConverter()
         with (test_data / img_path).open(mode="rb") as img_file:
@@ -669,9 +670,9 @@ class TestJpegXLConverter:
 
         with data:
             result = converter.convert(data)
-        assert isinstance(result, converters.ImageData)
-        assert result.img.mode == mode, f"{result.img.mode} != {mode}"
-        assert result.new is new, f"expected {new}, got {result.new}"
+        assert isinstance(result, bytes)
+        with BytesIO(result) as result_io, Image.open(result_io) as result_img:
+            assert result_img.mode == mode, f"{result_img.mode} != {mode}"
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
@@ -723,14 +724,7 @@ class TestJpegXLConverter:
 
         with data:
             result = converter.convert(data)
-        if img[1] == "JPEG":
-            assert isinstance(result, bytes), (
-                f"result should be a bytes object, it is {type(result)}"
-            )
-        else:
-            assert isinstance(result, converters.ImageData), (
-                f"result should be a ImageData object, it is {type(result)}"
-            )
+        assert isinstance(result, bytes)
 
 
 class TestPngConverter:
@@ -771,22 +765,22 @@ class TestPngConverter:
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
-        ("img_path", "mode", "new"),
+        ("img_path", "mode"),
         [
-            ("2953_alien_theories.png", "L", False),
-            ("2953_alien_theories_2.jpg", "L", False),
-            ("2953_alien_theories_3.pfm", "P", True),
-            ("2952_routine_maintenance_1bit.png", "1", False),
-            ("2955_pole_vault_L_alpha.png", "LA", False),
-            ("2955_pole_vault_p.png", "P", False),
-            ("2955_pole_vault_p_alpha.png", "P", False),
-            ("2864_compact_graphs.png", "RGB", False),
-            ("2864_compact_graphs_rgba.png", "RGBA", False),
-            ("2864_compact_graphs_cmyk.jpg", "RGB", True),
-            ("cursed_p_alpha.tif", "RGBA", True),
+            ("2953_alien_theories.png", "L"),
+            ("2953_alien_theories_2.jpg", "L"),
+            ("2953_alien_theories_3.pfm", "P"),
+            ("2952_routine_maintenance_1bit.png", "1"),
+            ("2955_pole_vault_L_alpha.png", "LA"),
+            ("2955_pole_vault_p.png", "P"),
+            ("2955_pole_vault_p_alpha.png", "P"),
+            ("2864_compact_graphs.png", "RGB"),
+            ("2864_compact_graphs_rgba.png", "RGBA"),
+            ("2864_compact_graphs_cmyk.jpg", "RGB"),
+            ("cursed_p_alpha.tif", "RGBA"),
         ],
     )
-    def test_pngconverter_convert(self, test_data, img_path, mode, new):
+    def test_pngconverter_convert(self, test_data, img_path, mode):
         """Test convert function using image from BytesIO objects."""
         converter = converters.PngConverter()
         with (test_data / img_path).open(mode="rb") as img_file:
@@ -794,9 +788,9 @@ class TestPngConverter:
 
         with data:
             result = converter.convert(data)
-        assert isinstance(result, converters.ImageData)
-        assert result.img.mode == mode, f"{result.img.mode} != {mode}"
-        assert result.new is new, f"expected {new}, got {result.new}"
+        assert isinstance(result, bytes)
+        with BytesIO(result) as result_io, Image.open(result_io) as result_img:
+            assert result_img.mode == mode, f"{result_img.mode} != {mode}"
 
 
 class TestParseStrBool:
@@ -822,39 +816,3 @@ class TestParseStrBool:
             ValueError, match='test value must be "1", "0", "true" or "false"'
         ):
             converters.parse_str_bool("testing", "test")
-
-    @pytest.mark.parametrize(
-        ("optimize", "dpi", "icc_profile", "exif"),
-        list(
-            product(
-                (True, False),
-                ((1000, 500), None),
-                (b"hello", None),
-                (b"world", None),
-            )
-        ),
-    )
-    def test_pngconverter_get_metadata(self, optimize, dpi, icc_profile, exif):
-        """Test PngConverter.get_metadata with all possible args."""
-        keys = {"dpi", "icc_profile", "exif", "optimize"}
-        info = {
-            "test": "testing",
-            "dpi": dpi,
-            "icc_profile": icc_profile,
-            "exif": exif,
-        }
-        for key in tuple(k for k, v in info.items() if v is None):
-            del info[key]
-
-        converter = converters.PngConverter(optimize=optimize)
-        meta = converter.get_metadata(info)
-
-        assert keys >= meta.keys(), f"unexpected keys: {meta.keys() - keys}"
-        if dpi:
-            assert meta["dpi"] == dpi
-        if icc_profile:
-            assert meta["icc_profile"] == icc_profile
-        if exif:
-            assert meta["exif"] == exif
-        if optimize is not None:
-            assert meta["optimize"] == optimize

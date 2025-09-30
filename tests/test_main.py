@@ -225,14 +225,6 @@ class MockConverter(converters.BaseConverter):
         raise CalledProcessError(msg, "mytest", stderr=b"Test error")
 
 
-class MockConverter2(MockConverter):
-    """A mock of a converter that returns an empty bytes object."""
-
-    def convert(self, in_buffer):  # noqa: ARG002
-        """Returns an empty bytes object."""
-        return converters.ImageData(nullcontext(), {}, new=False)
-
-
 class MockEntry:
     """A mock of an entry for doing a test."""
 
@@ -327,16 +319,6 @@ class TestEntryStorer:
             f"{PurePath(sys.argv[0]).name}: Error: An error happened while "
             'encoding "A test": Test error'
         )
-
-    def test_error_when_pil_format_is_none(self):
-        """Test if a ValueError exception is raised if pil_format is None."""
-        converter = MockConverter2(0)
-        entry_storer = __main__.EntryStorer(MockArchiveWrite(), converter)
-        with pytest.raises(
-            ValueError,
-            match=f"{converter.format} cannot be used for converting through Pillow",
-        ):
-            entry_storer.save_entry(MockEntry("A test"), "test")
 
 
 class TestMain:

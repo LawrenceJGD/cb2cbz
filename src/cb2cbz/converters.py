@@ -21,7 +21,6 @@ from __future__ import annotations
 import abc
 import subprocess
 from contextlib import contextmanager
-from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Self
@@ -36,6 +35,7 @@ JPEG_RANGE: Final = range(101)
 PNG_RANGE: Final = range(10)
 JPEG_DEFAULT: Final = 90
 PNG_DEFAULT: Final = 6
+LOSSLESS_QUALITY: Final = 100
 
 
 class ImageFormat(StrEnum):
@@ -46,23 +46,6 @@ class ImageFormat(StrEnum):
     JPEGLI = "jpegli"
     PNG = "png"
     NO_CHANGE = "no-change"
-
-
-@dataclass
-class ImageData:
-    """Dataclass for image data returned by converters.
-
-    Attributes:
-        img: Converted image.
-        meta: A dictionary that contains the original Image.Image.info
-            dict with all its metadata.
-        new: True if the image is new and does not depend on the input
-            BytesIO or viceversa.
-    """
-
-    img: Image.Image
-    meta: dict[str, Any]
-    new: bool
 
 
 def parse_str_bool(value: str, name: str) -> bool:
@@ -159,7 +142,7 @@ class BaseConverter(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def convert(self, in_buffer: BytesIO) -> ImageData | bytes:
+    def convert(self, in_buffer: BytesIO) -> bytes:
         """Convert an image into another format and return it.
 
         Args:
@@ -276,7 +259,28 @@ class JpegConverter(BaseConverter):
             subsampling=subsampling,
         )
 
-    def convert(self, in_buffer: BytesIO) -> ImageData:
+    def save(self, img: Image.Image, info: dict[str, Any]) -> bytes:
+        """Saves the image as a JPEG and returns it as a bytes object."""
+        metadata: dict[str, Any] = self.get_metadata(info)
+        if self.subsampling is not None and not (
+            img.format != "JPEG" and self.subsampling == JpegSubsamplingEnum.KEEP
+        ):
+            metadata["subsampling"] = self.subsampling
+
+        img_data: BytesIO
+        with BytesIO() as img_data:
+            img.save(
+                img_data,
+                format=self.__class__.pil_format,
+                quality=self.quality,
+                optimize=self.optimize,
+                progressive=self.progressive,
+                keep_rgb=self.keep_rgb,
+                **self.get_metadata(info),
+            )
+            return img_data.getvalue()
+
+    def convert(self, in_buffer: BytesIO) -> bytes:
         """Convert an image into JPEG and return it.
 
         Args:
@@ -295,30 +299,34 @@ class JpegConverter(BaseConverter):
             PIL.UnindentifiedImageError: If Pillow can't identify if
                 in_buffer is an image.
         """
-        img: Image.Image = Image.open(in_buffer)
-        if img.mode in {"L", "RGB", "CMYK"}:
-            return ImageData(img, img.info, new=False)
+        img: Image.Image
+        with Image.open(in_buffer) as img:
+            info: dict[str, Any] = img.info
+            if img.mode in {"L", "RGB", "CMYK"}:
+                return self.save(img, info)
 
-        if img.mode == "1":
-            return ImageData(img.convert("L"), img.info, new=True)
+            img2: Image.Image
+            if img.mode == "1":
+                img2 = img.convert("L")
 
-        if img.has_transparency_data:
-            # Adds a white background to a transparent image before
-            # deleting alpha channel.
-            return ImageData(remove_alpha(img), img.info, new=True)
+            elif img.has_transparency_data:
+                # Adds a white background to a transparent image before
+                # deleting alpha channel.
+                img2 = remove_alpha(img)
 
-        return ImageData(img.convert("RGB"), img.info, new=True)
+            else:
+                img2 = img.convert("RGB")
+
+        with img2:
+            return self.save(img2, info)
 
     def get_metadata(self, meta: dict[str, Any]) -> dict[str, Any]:
         """Returns metadata that must be saved to the JPEG file."""
-        metadata: dict[str, Any] = {"progressive": self.progressive}
-        metadata.update(
-            filter(
-                lambda x: x[0] in {"dpi", "icc_profile", "exif", "comment"},
-                meta.items(),
-            )
-        )
-        return metadata
+        return {
+            k: v
+            for k, v in meta.items()
+            if k in {"dpi", "icc_profile", "exif", "comment"}
+        }
 
 
 class JpegliProgressiveEnum(IntEnum):
@@ -690,7 +698,23 @@ class JpegXLConverter(BaseConverter):
         )
         return jxl
 
-    def convert(self, in_buffer: BytesIO) -> ImageData | bytes:
+    def save(self, img: Image.Image, info: dict[str, Any]) -> bytes:
+        """Saves the image as a JXL and returns it as a bytes object."""
+        with BytesIO() as img_data:
+            img.save(
+                img_data,
+                format="JXL",
+                lossless=self.quality == LOSSLESS_QUALITY,
+                quality=self.quality,
+                decoding_speed=self.decoding_speed,
+                effort=self.effort,
+                exif=info.get("exif"),
+                jumb=info.get("jumb"),
+                xmp=info.get("xmp"),
+            )
+            return img_data.getvalue()
+
+    def convert(self, in_buffer: BytesIO) -> bytes:
         """Convert an image into JPEG XL and return it.
 
         Args:
@@ -709,35 +733,31 @@ class JpegXLConverter(BaseConverter):
             PIL.UnindentifiedImageError: If Pillow can't identify if
                 in_buffer is an image.
         """
-        img: Image.Image = Image.open(in_buffer)
-
-        if img.format == "JPEG" and img.mode in {"RGB", "L"}:
-            with img:
+        img: Image.Image
+        with Image.open(in_buffer) as img:
+            if img.format == "JPEG" and img.mode in {"RGB", "L"}:
                 return self._jpg_to_jxl(in_buffer, img)
 
-        if img.format == "PNG":
-            # This is necessary for getting EXIF data if the PNG files has it.
-            img.load()
+            if img.format == "PNG":
+                # This is necessary for getting EXIF data if the PNG files has it.
+                img.load()
 
-        if img.mode == "1":
-            with img:
-                return ImageData(img.convert("L"), img.info, new=True)
+            info: dict[str, Any] = img.info
+            img2: Image.Image
+            if img.mode == "1":
+                img2 = img.convert("L")
 
-        if img.mode not in {"RGB", "L"} and not img.has_transparency_data:
-            with img:
-                return ImageData(
-                    img.convert("L" if img.mode == "LA" else "RGB"), img.info, new=True
-                )
+            elif img.mode not in {"RGB", "L"} and not img.has_transparency_data:
+                img2 = img.convert("L" if img.mode == "LA" else "RGB")
 
-        if img.mode not in {"RGB", "RGBA", "L", "LA"}:
-            with img:
-                return ImageData(
-                    img.convert("RGBA" if img.has_transparency_data else "RGB"),
-                    img.info,
-                    new=True,
-                )
+            elif img.mode not in {"RGB", "RGBA", "L", "LA"}:
+                img2 = img.convert("RGBA" if img.has_transparency_data else "RGB")
 
-        return ImageData(img, img.info, new=False)
+            else:
+                return self.save(img, info)
+
+        with img2:
+            return self.save(img2, info)
 
 
 class PngConverter(BaseConverter):
@@ -783,7 +803,21 @@ class PngConverter(BaseConverter):
                 optimize = parse_str_bool(value, name)
         return cls(optimize=optimize)
 
-    def convert(self, in_buffer: BytesIO) -> ImageData:
+    def save(self, img: Image.Image, info: dict[str, Any]) -> bytes:
+        """Saves the image as a PNG and returns it as a bytes object."""
+        with BytesIO() as img_data:
+            img.save(
+                img_data,
+                format=self.pil_format,
+                compress_level=self.quality,
+                optimize=self.optimize,
+                dpi=info.get("dpi"),
+                icc_profile=info.get("icc_profile"),
+                exif=info.get("exif"),
+            )
+            return img_data.getvalue()
+
+    def convert(self, in_buffer: BytesIO) -> bytes:
         """Convert an image into PNG and return it.
 
         Args:
@@ -802,25 +836,24 @@ class PngConverter(BaseConverter):
             PIL.UnindentifiedImageError: If Pillow can't identify if
                 in_buffer is an image.
         """
-        img: Image.Image = Image.open(in_buffer)
-        if img.mode in {"1", "L", "P"}:
-            return ImageData(img, img.info, new=False)
+        img: Image.Image
+        with Image.open(in_buffer) as img:
+            info: dict[str, Any] = img.info
+            if img.mode in {"1", "L", "P"}:
+                return self.save(img, info)
 
-        if img.getcolors():
-            return ImageData(img.convert("P"), img.info, new=True)
+            img2: Image.Image
+            if img.getcolors():
+                img2 = img.convert("P")
 
-        if img.mode != "RGB" and not img.has_transparency_data:
-            return ImageData(img.convert("RGB"), img.info, new=True)
+            elif img.mode != "RGB" and not img.has_transparency_data:
+                img2 = img.convert("RGB")
 
-        if img.mode in {"LA", "I", "RGB", "RGBA"}:
-            return ImageData(img, img.info, new=False)
+            elif img.mode in {"LA", "I", "RGB", "RGBA"}:
+                return self.save(img, info)
 
-        return ImageData(img.convert("RGBA"), img.info, new=True)
+            else:
+                img2 = img.convert("RGBA")
 
-    def get_metadata(self, meta: dict[str, Any]) -> dict[str, Any]:
-        """Returns metadata that must be saved to the PNG file."""
-        metadata: dict[str, Any] = {"optimize": self.optimize}
-        metadata.update(
-            filter(lambda x: x[0] in {"dpi", "icc_profile", "exif"}, meta.items())
-        )
-        return metadata
+        with img2:
+            return self.save(img2, info)

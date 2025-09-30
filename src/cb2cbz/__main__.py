@@ -293,46 +293,6 @@ class EntryStorer:
         self.archive = archive
         self.converter = converter
 
-    def _save_buf(
-        self, out_name: str, entry: ArchiveEntry, img: Image.Image, meta: dict[str, Any]
-    ) -> None:
-        if self.converter is None:  # pragma: no cover
-            msg: str = "converter was not specified"
-            raise ValueError(msg)
-        if self.converter.pil_format is None:
-            msg = (
-                f"{self.converter.format} cannot be used for converting through Pillow"
-            )
-            raise ValueError(msg)
-
-        entry_attrs: dict[str, Any] = get_entry_attrs(entry)
-        entry_attrs["mtime"] = datetime.datetime.now().astimezone().timestamp()
-
-        with BytesIO() as out_buffer:
-            if hasattr(self.converter, "get_metadata"):
-                img.save(
-                    out_buffer,
-                    format=self.converter.pil_format,
-                    quality=self.converter.quality,
-                    **self.converter.get_metadata(meta),
-                )
-            else:
-                img.save(
-                    out_buffer,
-                    format=self.converter.pil_format,
-                    quality=self.converter.quality,
-                )
-            data: bytes = out_buffer.getvalue()
-
-        self.archive.add_file_from_memory(
-            out_name,
-            len(data),
-            data,
-            entry.filetype,
-            entry.perm,
-            **entry_attrs,
-        )
-
     def save_entry(self, entry: ArchiveEntry, name: str) -> None:
         """Saves an entry from the input comic book to the .cbz file.
 
@@ -359,9 +319,7 @@ class EntryStorer:
                 in_buffer.write(block)
 
             try:
-                img_data: converters.ImageData | bytes = self.converter.convert(
-                    in_buffer
-                )
+                img_data: bytes = self.converter.convert(in_buffer)
 
             except UnidentifiedImageError:
                 errormsg(
@@ -380,27 +338,18 @@ class EntryStorer:
                     1,
                 )
 
-            if isinstance(img_data, bytes):
-                entry_attrs: dict[str, Any] = get_entry_attrs(entry)
-                entry_attrs["mtime"] = datetime.datetime.now().astimezone().timestamp()
+            entry_attrs: dict[str, Any] = get_entry_attrs(entry)
+            entry_attrs["mtime"] = datetime.datetime.now().astimezone().timestamp()
 
-                self.archive.add_file_from_memory(
-                    name,
-                    len(img_data),
-                    img_data,
-                    entry.filetype,
-                    entry.perm,
-                    **entry_attrs,
-                )
-                return
-
-            if not img_data.new:
-                with img_data.img:
-                    self._save_buf(name, entry, img_data.img, img_data.meta)
-                return
-
-        with img_data.img:
-            self._save_buf(name, entry, img_data.img, img_data.meta)
+            self.archive.add_file_from_memory(
+                name,
+                len(img_data),
+                img_data,
+                entry.filetype,
+                entry.perm,
+                **entry_attrs,
+            )
+            return
 
 
 def create_new_name(old_name: str, converter: converters.BaseConverter | None) -> str:
